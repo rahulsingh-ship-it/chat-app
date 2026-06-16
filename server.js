@@ -50,18 +50,27 @@ async function connectDB() {
   }
 }
 
-// Get conversation history between two users
-async function getHistory(emailA, emailB, limit = 100) {
-  if (!db) return [];
-  return db.collection('messages').find({
+// Get conversation history between two users (paginated, newest-first fetch then reversed)
+async function getHistory(emailA, emailB, before = null, limit = 50) {
+  if (!db) return { messages: [], hasMore: false };
+  const query = {
     $or: [
       { from: emailA, to: emailB },
       { from: emailB, to: emailA }
     ]
-  }, { projection: { _id: 0 } })
-    .sort({ timestamp: 1 })
-    .limit(limit)
+  };
+  if (before) query.timestamp = { $lt: before };
+
+  // Fetch one extra to know if there are older messages
+  const rows = await db.collection('messages')
+    .find(query, { projection: { _id: 0 } })
+    .sort({ timestamp: -1 })
+    .limit(limit + 1)
     .toArray();
+
+  const hasMore = rows.length > limit;
+  if (hasMore) rows.pop();
+  return { messages: rows.reverse(), hasMore };
 }
 
 // Get recent conversations for a user (last message per contact)
@@ -147,8 +156,9 @@ wss.on('connection', (ws) => {
         if (!myEmail) return;
         const withEmail = (msg.with || '').trim().toLowerCase();
         if (!withEmail) return;
-        const messages = await getHistory(myEmail, withEmail);
-        ws.send(JSON.stringify({ type: 'history', with: withEmail, messages }));
+        const before = msg.before ? Number(msg.before) : null;
+        const { messages, hasMore } = await getHistory(myEmail, withEmail, before);
+        ws.send(JSON.stringify({ type: 'history', with: withEmail, messages, hasMore, isPagination: !!before }));
         break;
       }
 

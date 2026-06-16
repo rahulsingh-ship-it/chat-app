@@ -109,6 +109,9 @@
   #messages { flex: 1; overflow-y: auto; padding: 10px 14px; display: flex; flex-direction: column; gap: 2px; scroll-behavior: smooth; -webkit-overflow-scrolling: touch; }
   #messages::-webkit-scrollbar { width: 5px; }
   #messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  #load-more-btn { display: none; align-self: center; background: var(--bg3); border: 1px solid var(--border); border-radius: 20px; color: var(--text2); cursor: pointer; font-size: 12px; padding: 6px 16px; margin: 4px 0 8px; flex-shrink: 0; }
+  #load-more-btn:active { background: var(--bg2); }
+  #load-more-spinner { display: none; align-self: center; font-size: 12px; color: var(--text2); margin: 6px 0; }
   .date-divider { text-align: center; font-size: 11px; color: var(--text2); padding: 8px 0 4px; }
   .msg { padding: 4px 8px; border-radius: 8px; transition: background 0.12s; }
   .msg:hover { background: var(--bg2); }
@@ -262,7 +265,10 @@
     </div>
 
     <!-- Message area (hidden until chat opened) -->
-    <div id="messages" style="display:none"></div>
+    <div id="messages" style="display:none">
+      <div id="load-more-spinner">Loading…</div>
+      <button id="load-more-btn">↑ Load older messages</button>
+    </div>
     <div id="typing-bar" style="display:none"></div>
     <div id="reply-preview">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2.5" style="flex-shrink:0"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg>
@@ -311,6 +317,9 @@ let searchQuery = '';
 let searchMatches = [];
 let searchIdx = 0;
 let lastDate = null;
+let oldestTimestamp = null;  // for pagination
+let hasMoreHistory = false;
+let loadingMore = false;
 
 // ── Helpers ───────────────────────────────────────────────────────
 const $= id => document.getElementById(id);
@@ -356,7 +365,7 @@ function connect() {
     switch(d.type){
       case 'conversations': renderConvos(d.conversations); break;
       case 'online_users': renderOnline(d.users); break;
-      case 'history': if(d.with===currentChat) renderHistory(d.messages); break;
+      case 'history': if(d.with===currentChat) { if(d.isPagination) prependHistory(d.messages,d.hasMore); else renderHistory(d.messages,d.hasMore); } break;
       case 'message': onMessage(d.message); break;
       case 'typing': onTyping(d); break;
       case 'search_result': onSearchResult(d); break;
@@ -401,7 +410,9 @@ function openChat(email) {
   $('messages').style.display='flex';
   $('typing-bar').style.display='block';
   $('input-wrap').style.display='block';
-  $('messages').innerHTML=''; lastDate=null;
+  $('messages').innerHTML='<div id="load-more-spinner" style="display:none;align-self:center;font-size:12px;color:var(--text2);margin:6px 0">Loading…</div><button id="load-more-btn" style="display:none;align-self:center;background:var(--bg3);border:1px solid var(--border);border-radius:20px;color:var(--text2);cursor:pointer;font-size:12px;padding:6px 16px;margin:4px 0 8px;flex-shrink:0">↑ Load older messages</button>';
+  lastDate=null; oldestTimestamp=null; hasMoreHistory=false; loadingMore=false;
+  $('load-more-btn').onclick=loadOlderMessages;
 
   if(ws&&ws.readyState===1) ws.send(JSON.stringify({type:'get_history',with:email}));
   $('msg-input').focus();
@@ -440,12 +451,61 @@ $('back-btn').onclick=()=>{
 };
 
 // ── Render messages ───────────────────────────────────────────────
-function renderHistory(msgs) {
-  $('messages').innerHTML=''; lastDate=null;
+function renderHistory(msgs, hasMore) {
+  // Keep the load-more controls at top, remove everything else
+  const spinner=$('load-more-spinner'), btn=$('load-more-btn');
+  // Clear messages except controls
+  Array.from($('messages').children).forEach(c=>{ if(c!==spinner&&c!==btn) c.remove(); });
+  lastDate=null;
   msgs.forEach(addMsg);
+  if(msgs.length) oldestTimestamp=msgs[0].timestamp;
+  hasMoreHistory=!!hasMore;
+  if(btn) btn.style.display=hasMoreHistory?'':'none';
   scrollBottom();
   if(searchActive&&searchQuery) applySearch();
 }
+function prependHistory(msgs, hasMore) {
+  if(!msgs.length) { loadingMore=false; return; }
+  const el=$('messages');
+  const spinner=$('load-more-spinner'), btn=$('load-more-btn');
+  const prevHeight=el.scrollHeight;
+  // Insert before first real message (after controls)
+  const anchor=btn?btn.nextSibling:el.firstChild;
+  // Build a fragment
+  const frag=document.createDocumentFragment();
+  const savedLastDate=lastDate; lastDate=null;
+  msgs.forEach(msg=>{
+    const dateStr=fmtDate(msg.timestamp);
+    if(dateStr!==lastDate){
+      lastDate=dateStr;
+      const div=document.createElement('div');
+      div.className='date-divider'; div.textContent=dateStr;
+      frag.appendChild(div);
+    }
+    frag.appendChild(buildMsgEl(msg));
+  });
+  lastDate=savedLastDate; // restore so future addMsg calls are correct
+  el.insertBefore(frag, anchor);
+  // Restore scroll so user doesn't jump
+  el.scrollTop+=el.scrollHeight-prevHeight;
+  oldestTimestamp=msgs[0].timestamp;
+  hasMoreHistory=!!hasMore;
+  if(btn) btn.style.display=hasMoreHistory?'':'none';
+  if(spinner) spinner.style.display='none';
+  loadingMore=false;
+}
+function loadOlderMessages(){
+  if(loadingMore||!hasMoreHistory||!currentChat||!ws||ws.readyState!==1) return;
+  loadingMore=true;
+  const spinner=$('load-more-spinner'), btn=$('load-more-btn');
+  if(spinner) spinner.style.display='block';
+  if(btn) btn.style.display='none';
+  ws.send(JSON.stringify({type:'get_history',with:currentChat,before:oldestTimestamp}));
+}
+// Scroll-up to load more
+$('messages').addEventListener('scroll',()=>{
+  if($('messages').scrollTop<60&&hasMoreHistory&&!loadingMore) loadOlderMessages();
+});
 function addMsg(msg) {
   const dateStr=fmtDate(msg.timestamp);
   if(dateStr!==lastDate){
@@ -454,6 +514,9 @@ function addMsg(msg) {
     div.className='date-divider'; div.textContent=dateStr;
     $('messages').appendChild(div);
   }
+  $('messages').appendChild(buildMsgEl(msg));
+}
+function buildMsgEl(msg){
   const isMe=msg.from===myEmail;
   const el=document.createElement('div');
   el.className='msg'; el.dataset.id=msg.id; el.tabIndex=-1;
@@ -467,7 +530,7 @@ function addMsg(msg) {
   el.querySelector('.reply-btn').onclick=()=>startReply(msg);
   const q=el.querySelector('.reply-quote');
   if(q) q.onclick=()=>jumpTo(q.dataset.ref);
-  $('messages').appendChild(el);
+  return el;
 }
 function onMessage(msg) {
   const other=msg.from===myEmail?msg.to:msg.from;
