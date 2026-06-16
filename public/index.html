@@ -316,6 +316,7 @@ const ALL_EMOJIS = Object.values(EMOJIS).flat();
 let ws = null;
 let myEmail = localStorage.getItem('chat_email') || null;
 let currentChat = sessionStorage.getItem('currentChat') || null;
+let _chatRestored = false;
 let onlineUsers = [];
 let replyTo = null;
 let typingTimer = null;
@@ -373,8 +374,9 @@ function connect() {
     switch(d.type){
       case 'conversations':
         renderConvos(d.conversations);
-        // Restore last open chat after page refresh
-        if(currentChat) {
+        // Restore last open chat after page refresh — only once, not on every refreshConvos()
+        if(!_chatRestored && currentChat) {
+          _chatRestored = true;
           const restore = currentChat;
           currentChat = null; // force isNewChat=true so history is fetched
           openChat(restore);
@@ -504,13 +506,13 @@ function prependHistory(msgs, hasMore) {
 function setHasMore(val){
   hasMoreHistory=val;
   $('load-more-bar').style.display=val?'flex':'none';
-  $('load-more-btn').style.display=val?'':'none';
+  $('load-more-btn').style.display=val?'block':'none';
   $('load-more-spinner').style.display='none';
 }
 function setLoadingSpinner(val){
   $('load-more-bar').style.display='flex';
-  $('load-more-spinner').style.display=val?'':'none';
-  $('load-more-btn').style.display=val?'none':'';
+  $('load-more-spinner').style.display=val?'block':'none';
+  $('load-more-btn').style.display=val?'none':'block';
 }
 function loadOlderMessages(){
   if(loadingMore||!hasMoreHistory||!currentChat||!ws||ws.readyState!==1) return;
