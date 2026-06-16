@@ -3,6 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
 <title>Chat</title>
 <style>
   :root {
@@ -366,7 +368,16 @@ function connect() {
   const proto=location.protocol==='https:'?'wss:':'ws:';
   ws=new WebSocket(`${proto}//${location.host}`);
   setStatus('connecting');
-  ws.onopen=()=>{ setStatus('connected'); ws.send(JSON.stringify({type:'join',email:myEmail})); };
+  ws.onopen=()=>{
+    setStatus('connected');
+    ws.send(JSON.stringify({type:'join',email:myEmail}));
+    // On reconnect (not first load), reload history for the open chat
+    if(_chatRestored && currentChat) {
+      $('messages').innerHTML='';
+      lastDate=null; oldestTimestamp=null; hasMoreHistory=false; loadingMore=false;
+      ws.send(JSON.stringify({type:'get_history',with:currentChat}));
+    }
+  };
   ws.onclose=()=>{ setStatus('disconnected'); setTimeout(connect,2500); };
   ws.onerror=()=>ws.close();
   ws.onmessage=e=>{
@@ -615,10 +626,16 @@ function jumpTo(id){
 }
 
 // ── Render people list (online + offline contacts merged) ─────────
+// Restore cached contacts immediately so offline users show without waiting for server
 let _convos = [];
+try {
+  const cached = localStorage.getItem('_convos_' + (myEmail||''));
+  if (cached) { _convos = JSON.parse(cached); renderPeople(); }
+} catch {}
 
 function renderConvos(convos) {
   _convos = convos;
+  try { localStorage.setItem('_convos_' + myEmail, JSON.stringify(convos)); } catch {}
   renderPeople();
 }
 function renderOnline(users) {
