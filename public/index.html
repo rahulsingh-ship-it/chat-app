@@ -128,8 +128,15 @@
   .msg:hover .msg-actions, .msg:focus-within .msg-actions { display: flex; gap: 4px; }
   .msg-action { background: var(--bg3); border: none; border-radius: 5px; color: var(--text2); cursor: pointer; font-size: 12px; padding: 3px 10px; -webkit-tap-highlight-color: transparent; }
   .msg-action:hover, .msg-action:active { background: var(--accent); color: #fff; }
+  .msg-edited { font-size: 10px; color: var(--text2); margin-left: 4px; }
 
-  /* Mobile: always show reply button (touch users can't hover) */
+  /* Inline edit */
+  .edit-row { display: flex; gap: 6px; margin-top: 4px; align-items: flex-end; }
+  .edit-textarea { flex: 1; background: var(--bg2); border: 1.5px solid var(--accent); border-radius: 8px; color: var(--text); font-size: 14px; font-family: inherit; line-height: 1.5; outline: none; padding: 6px 10px; resize: none; max-height: 100px; }
+  .edit-save { background: var(--accent); border: none; border-radius: 7px; color: #fff; cursor: pointer; font-size: 12px; font-weight: 700; padding: 5px 12px; white-space: nowrap; }
+  .edit-cancel { background: var(--bg3); border: none; border-radius: 7px; color: var(--text2); cursor: pointer; font-size: 12px; padding: 5px 10px; }
+
+  /* Mobile: always show action buttons (touch users can't hover) */
   @media (max-width: 700px) { .msg-actions { display: flex; } }
 
   /* ── Typing ─────────────────────────────────────────────────── */
@@ -367,6 +374,7 @@ function connect() {
       case 'online_users': renderOnline(d.users); break;
       case 'history': if(d.with===currentChat) { if(d.isPagination) prependHistory(d.messages,d.hasMore); else renderHistory(d.messages,d.hasMore); } break;
       case 'message': onMessage(d.message); break;
+      case 'message_edited': applyEdit(d.message); break;
       case 'typing': onTyping(d); break;
       case 'search_result': onSearchResult(d); break;
     }
@@ -524,13 +532,61 @@ function buildMsgEl(msg){
   if(msg.replyTo){
     html+=`<div class="reply-quote" data-ref="${esc(msg.replyTo.id)}"><strong>↩ ${esc(msg.replyTo.author||msg.replyTo.from)}</strong>${esc((msg.replyTo.text||'').slice(0,80))}${(msg.replyTo.text||'').length>80?'…':''}</div>`;
   }
-  html+=`<div class="msg-header"><span class="msg-author" style="color:${colorFor(msg.from)}">${esc(isMe?'You':msg.from)}</span><span class="msg-time">${fmtTime(msg.timestamp)}</span></div>`;
-  html+=`<div class="msg-body"><div class="msg-text">${esc(msg.text)}</div><div class="msg-actions"><button class="msg-action reply-btn">↩ Reply</button></div></div>`;
+  html+=`<div class="msg-header"><span class="msg-author" style="color:${colorFor(msg.from)}">${esc(isMe?'You':msg.from)}</span><span class="msg-time">${fmtTime(msg.timestamp)}</span>${msg.editedAt?'<span class="msg-edited">(edited)</span>':''}</div>`;
+  const editBtn=isMe?'<button class="msg-action edit-btn">✏️ Edit</button>':'';
+  html+=`<div class="msg-body"><div class="msg-text">${esc(msg.text)}</div><div class="msg-actions"><button class="msg-action reply-btn">↩ Reply</button>${editBtn}</div></div>`;
   el.innerHTML=html;
   el.querySelector('.reply-btn').onclick=()=>startReply(msg);
+  if(isMe) el.querySelector('.edit-btn').onclick=()=>startEdit(el, msg);
   const q=el.querySelector('.reply-quote');
   if(q) q.onclick=()=>jumpTo(q.dataset.ref);
   return el;
+}
+function startEdit(el, msg) {
+  // Don't open two editors at once
+  if(el.querySelector('.edit-row')) return;
+  const body=el.querySelector('.msg-body');
+  const textEl=el.querySelector('.msg-text');
+  textEl.style.display='none';
+  el.querySelector('.msg-actions').style.display='none';
+  const row=document.createElement('div'); row.className='edit-row';
+  const ta=document.createElement('textarea'); ta.className='edit-textarea';
+  ta.value=msg.text; ta.rows=1;
+  ta.oninput=()=>{ ta.style.height='auto'; ta.style.height=Math.min(ta.scrollHeight,100)+'px'; };
+  const save=document.createElement('button'); save.className='edit-save'; save.textContent='Save';
+  const cancel=document.createElement('button'); cancel.className='edit-cancel'; cancel.textContent='Cancel';
+  row.append(ta,save,cancel); body.appendChild(row);
+  ta.focus(); ta.setSelectionRange(ta.value.length,ta.value.length);
+  ta.dispatchEvent(new Event('input')); // auto-size
+  ta.onkeydown=e=>{ if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();save.click();} if(e.key==='Escape') cancel.click(); };
+  save.onclick=()=>{
+    const newText=ta.value.trim();
+    if(newText&&newText!==msg.text&&ws&&ws.readyState===1){
+      ws.send(JSON.stringify({type:'edit_message',id:msg.id,text:newText}));
+    }
+    cancelEdit(el,textEl,row);
+  };
+  cancel.onclick=()=>cancelEdit(el,textEl,row);
+}
+function cancelEdit(el,textEl,row){
+  row.remove(); textEl.style.display='';
+  const actions=el.querySelector('.msg-actions'); if(actions) actions.style.display='';
+}
+function applyEdit(edited){
+  const el=$('messages').querySelector(`[data-id="${edited.id}"]`);
+  if(!el) return;
+  const textEl=el.querySelector('.msg-text');
+  if(textEl) textEl.textContent=edited.text;
+  // Add/update (edited) label
+  let label=el.querySelector('.msg-edited');
+  if(!label){ label=document.createElement('span'); label.className='msg-edited'; label.textContent='(edited)'; el.querySelector('.msg-time')?.after(label); }
+  // Update stored msg reference for re-edits (update edit-btn handler)
+  el.querySelector('.edit-btn')?.remove();
+  const actions=el.querySelector('.msg-actions');
+  if(actions){
+    const btn=document.createElement('button'); btn.className='msg-action edit-btn'; btn.textContent='✏️ Edit';
+    btn.onclick=()=>startEdit(el,edited); actions.appendChild(btn);
+  }
 }
 function onMessage(msg) {
   const other=msg.from===myEmail?msg.to:msg.from;

@@ -187,6 +187,22 @@ wss.on('connection', (ws) => {
         break;
       }
 
+      case 'edit_message': {
+        if (!myEmail) return;
+        const { id: editId, text: newText } = msg;
+        const trimmed = (newText || '').trim().slice(0, 2000);
+        if (!editId || !trimmed) return;
+        if (!db) return;
+        // Only allow editing own messages
+        const original = await db.collection('messages').findOne({ id: editId, from: myEmail }, { projection: { _id: 0 } });
+        if (!original) return;
+        await db.collection('messages').updateOne({ id: editId }, { $set: { text: trimmed, editedAt: Date.now() } });
+        const edited = { ...original, text: trimmed, editedAt: Date.now() };
+        ws.send(JSON.stringify({ type: 'message_edited', message: edited }));
+        sendTo(original.to, { type: 'message_edited', message: edited });
+        break;
+      }
+
       case 'typing': {
         if (!myEmail) return;
         const to = (msg.to || '').trim().toLowerCase();
