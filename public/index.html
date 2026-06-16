@@ -612,7 +612,11 @@ function applyEdit(edited){
 function onMessage(msg) {
   const other=msg.from===myEmail?msg.to:msg.from;
   if(other===currentChat){ addMsg(msg); scrollIfNear(); if(searchActive&&searchQuery) applySearch(); }
-  refreshConvos();
+  // Update sidebar locally — no server round-trip, eliminates the join→conversations→openChat loop
+  _convos = [{with:other,lastMessage:{text:msg.text,from:msg.from,timestamp:msg.timestamp}},
+             ..._convos.filter(c=>c.with!==other)];
+  try { localStorage.setItem('_convos_'+myEmail, JSON.stringify(_convos)); } catch {}
+  renderPeople();
 }
 function scrollBottom(){ const m=$('messages'); m.scrollTop=m.scrollHeight; }
 function scrollIfNear(){
