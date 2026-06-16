@@ -89,6 +89,7 @@
   .s-connected { background: #dcfce7; color: #16a34a; }
   .s-disconnected { background: #fee2e2; color: #dc2626; }
   .s-connecting { background: #fef9c3; color: #ca8a04; }
+  .s-db-error { background: #fee2e2; color: #dc2626; }
   @media (prefers-color-scheme: dark) {
     .s-connected { background: #14532d; color: #86efac; }
     .s-disconnected { background: #450a0a; color: #fca5a5; }
@@ -371,6 +372,7 @@ function connect() {
   ws.onopen=()=>{
     setStatus('connected');
     ws.send(JSON.stringify({type:'join',email:myEmail}));
+    ws.send(JSON.stringify({type:'ping'})); // check DB status immediately
     // On reconnect (not first load), reload history for the open chat
     if(_chatRestored && currentChat) {
       $('messages').innerHTML='';
@@ -399,13 +401,27 @@ function connect() {
       case 'message_edited': applyEdit(d.message); break;
       case 'typing': onTyping(d); break;
       case 'search_result': onSearchResult(d); break;
+      case 'pong':
+        if(d.db !== 'connected') {
+          setStatus('db-error');
+        }
+        break;
+      case 'error':
+        if(d.code === 'message') {
+          const errDiv = document.createElement('div');
+          errDiv.style.cssText = 'background:#fee2e2;color:#dc2626;padding:6px 12px;font-size:12px;text-align:center;';
+          errDiv.textContent = '⚠️ Message not saved — database offline. Please retry.';
+          $('messages').appendChild(errDiv);
+          setTimeout(()=>errDiv.remove(), 5000);
+        }
+        break;
     }
   };
 }
 function setStatus(s){
   const el=$('conn-status');
   el.className='s-'+s;
-  el.textContent=s==='connected'?'● Online':s==='connecting'?'Connecting…':'○ Offline';
+  el.textContent=s==='connected'?'● Online':s==='connecting'?'Connecting…':s==='db-error'?'⚠️ DB Offline':'○ Offline';
 }
 if(myEmail){ $('my-email-chip').textContent=myEmail; connect(); }
 

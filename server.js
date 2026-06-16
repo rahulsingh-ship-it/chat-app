@@ -11,6 +11,16 @@ const wss = new WebSocketServer({ server });
 
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Health check — lets us diagnose DB status without reading logs
+app.get('/health', (req, res) => {
+  res.json({
+    db: db ? 'connected' : 'DISCONNECTED',
+    clients: clients.size,
+    uptime: Math.floor(process.uptime()),
+    mongoUri: MONGODB_URI ? 'set' : 'MISSING'
+  });
+});
+
 // clients: Map<email, ws>
 const clients = new Map();
 
@@ -39,15 +49,22 @@ async function connectDB() {
     return;
   }
   try {
-    const client = new MongoClient(MONGODB_URI);
+    const client = new MongoClient(MONGODB_URI, {
+      serverSelectionTimeoutMS: 10000,
+      socketTimeoutMS: 45000,
+    });
     await client.connect();
     db = client.db('chatapp');
     await db.collection('messages').createIndex({ from: 1, to: 1, timestamp: 1 });
     await db.collection('messages').createIndex({ to: 1, from: 1, timestamp: 1 });
     await db.collection('messages').createIndex({ id: 1 });
-    console.log('Connected to MongoDB');
+    console.log('✅ Connected to MongoDB');
+    // Reconnect if connection drops
+    client.on('close', () => { console.warn('MongoDB connection closed — reconnecting…'); db = null; setTimeout(connectDB, 5000); });
   } catch (err) {
-    console.error('MongoDB error:', err.message);
+    console.error('❌ MongoDB connection failed:', err.message);
+    // Retry after 10s
+    setTimeout(connectDB, 10000);
   }
 }
 
@@ -103,7 +120,7 @@ async function getConversations(email) {
 }
 
 async function saveMessage(msg) {
-  if (!db) return;
+  if (!db) throw new Error('Database not connected — message not saved');
   await db.collection('messages').insertOne({ ...msg });
 }
 
@@ -210,6 +227,11 @@ wss.on('connection', (ws) => {
         if (!myEmail) return;
         const to = (msg.to || '').trim().toLowerCase();
         sendTo(to, { type: 'typing', from: myEmail, isTyping: !!msg.isTyping });
+        break;
+      }
+
+      case 'ping': {
+        ws.send(JSON.stringify({ type: 'pong', db: db ? 'connected' : 'disconnected' }));
         break;
       }
 
