@@ -374,7 +374,11 @@ function connect() {
       case 'conversations':
         renderConvos(d.conversations);
         // Restore last open chat after page refresh
-        if(currentChat) openChat(currentChat);
+        if(currentChat) {
+          const restore = currentChat;
+          currentChat = null; // force isNewChat=true so history is fetched
+          openChat(restore);
+        }
         break;
       case 'online_users': renderOnline(d.users); break;
       case 'history': if(d.with===currentChat) { if(d.isPagination) prependHistory(d.messages,d.hasMore); else renderHistory(d.messages,d.hasMore); } break;
