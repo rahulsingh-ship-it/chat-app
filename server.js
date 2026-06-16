@@ -11,7 +11,7 @@ const wss = new WebSocketServer({ server });
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-const MAX_MESSAGES = 500;
+// clients: Map<email, ws>
 const clients = new Map();
 
 const USER_COLORS = [
@@ -19,139 +19,203 @@ const USER_COLORS = [
   '#a78bfa', '#f472b6', '#38bdf8', '#fb923c'
 ];
 
-// MongoDB setup
-const MONGODB_URI = process.env.MONGODB_URI;
-let db = null;
-
-async function connectDB() {
-  if (!MONGODB_URI) {
-    console.warn('No MONGODB_URI set — using in-memory storage (messages lost on restart)');
-    return;
-  }
-  try {
-    const client = new MongoClient(MONGODB_URI);
-    await client.connect();
-    db = client.db('chatapp');
-    await db.collection('messages').createIndex({ timestamp: 1 });
-    console.log('Connected to MongoDB');
-  } catch (err) {
-    console.error('MongoDB connection failed:', err.message);
-  }
-}
-
-async function getHistory() {
-  if (!db) return [];
-  return db.collection('messages')
-    .find({}, { projection: { _id: 0 } })
-    .sort({ timestamp: -1 })
-    .limit(MAX_MESSAGES)
-    .toArray()
-    .then(msgs => msgs.reverse());
-}
-
-async function saveMessage(message) {
-  if (!db) return;
-  await db.collection('messages').insertOne({ ...message });
-  // Keep only last MAX_MESSAGES
-  const count = await db.collection('messages').countDocuments();
-  if (count > MAX_MESSAGES) {
-    const oldest = await db.collection('messages')
-      .find({}, { projection: { _id: 1 } })
-      .sort({ timestamp: 1 })
-      .limit(count - MAX_MESSAGES)
-      .toArray();
-    const ids = oldest.map(d => d._id);
-    await db.collection('messages').deleteMany({ _id: { $in: ids } });
-  }
+function colorForEmail(email) {
+  let hash = 0;
+  for (const c of email) hash = (hash * 31 + c.charCodeAt(0)) & 0xffffffff;
+  return USER_COLORS[Math.abs(hash) % USER_COLORS.length];
 }
 
 function generateId() {
   return crypto.randomBytes(6).toString('hex');
 }
 
-function broadcast(data, exclude = null) {
-  const payload = JSON.stringify(data);
-  for (const [ws] of clients) {
-    if (ws !== exclude && ws.readyState === 1) ws.send(payload);
+// ─── MongoDB ──────────────────────────────────────────────────────────────────
+const MONGODB_URI = process.env.MONGODB_URI;
+let db = null;
+
+async function connectDB() {
+  if (!MONGODB_URI) {
+    console.warn('No MONGODB_URI — messages will not persist');
+    return;
+  }
+  try {
+    const client = new MongoClient(MONGODB_URI);
+    await client.connect();
+    db = client.db('chatapp');
+    await db.collection('messages').createIndex({ from: 1, to: 1, timestamp: 1 });
+    await db.collection('messages').createIndex({ to: 1, from: 1, timestamp: 1 });
+    console.log('Connected to MongoDB');
+  } catch (err) {
+    console.error('MongoDB error:', err.message);
   }
 }
 
-function broadcastAll(data) { broadcast(data); }
+// Get conversation history between two users
+async function getHistory(emailA, emailB, limit = 100) {
+  if (!db) return [];
+  return db.collection('messages').find({
+    $or: [
+      { from: emailA, to: emailB },
+      { from: emailB, to: emailA }
+    ]
+  }, { projection: { _id: 0 } })
+    .sort({ timestamp: 1 })
+    .limit(limit)
+    .toArray();
+}
+
+// Get recent conversations for a user (last message per contact)
+async function getConversations(email) {
+  if (!db) return [];
+  const msgs = await db.collection('messages').aggregate([
+    { $match: { $or: [{ from: email }, { to: email }] } },
+    { $sort: { timestamp: -1 } },
+    {
+      $group: {
+        _id: {
+          $cond: [{ $eq: ['$from', email] }, '$to', '$from']
+        },
+        lastMessage: { $first: '$$ROOT' }
+      }
+    },
+    { $sort: { 'lastMessage.timestamp': -1 } },
+    { $limit: 50 }
+  ]).toArray();
+
+  return msgs.map(m => ({
+    with: m._id,
+    lastMessage: {
+      text: m.lastMessage.text,
+      from: m.lastMessage.from,
+      timestamp: m.lastMessage.timestamp
+    }
+  }));
+}
+
+async function saveMessage(msg) {
+  if (!db) return;
+  await db.collection('messages').insertOne({ ...msg });
+}
+
+// ─── WebSocket ────────────────────────────────────────────────────────────────
+function sendOnlineUsers() {
+  const online = [...clients.keys()];
+  const payload = JSON.stringify({ type: 'online_users', users: online });
+  for (const ws of clients.values()) {
+    if (ws.readyState === 1) ws.send(payload);
+  }
+}
+
+function sendTo(email, data) {
+  const ws = clients.get(email);
+  if (ws && ws.readyState === 1) {
+    ws.send(JSON.stringify(data));
+    return true;
+  }
+  return false;
+}
 
 wss.on('connection', (ws) => {
-  const clientId = generateId();
-  const colorIndex = clients.size % USER_COLORS.length;
-  const client = { id: clientId, username: null, color: USER_COLORS[colorIndex] };
-  clients.set(ws, client);
+  let myEmail = null;
 
   ws.on('message', async (raw) => {
     let msg;
     try { msg = JSON.parse(raw); } catch { return; }
 
     switch (msg.type) {
+
       case 'join': {
-        const username = (msg.username || '').trim().slice(0, 32) || `User${clientId.slice(0, 4)}`;
-        client.username = username;
+        const email = (msg.email || '').trim().toLowerCase().slice(0, 200);
+        if (!email || !email.includes('@')) return;
+        myEmail = email;
 
-        // Send persisted history
-        const history = await getHistory();
-        ws.send(JSON.stringify({ type: 'history', messages: history }));
+        // Disconnect any previous session for this email
+        const existing = clients.get(email);
+        if (existing && existing !== ws) existing.close();
+        clients.set(email, ws);
 
-        const userList = [...clients.values()]
-          .filter(c => c.username)
-          .map(c => ({ id: c.id, username: c.username, color: c.color }));
-        broadcastAll({ type: 'users', users: userList });
+        // Send their recent conversations
+        const conversations = await getConversations(email);
+        ws.send(JSON.stringify({ type: 'conversations', conversations }));
 
-        broadcast({ type: 'system', text: `${username} joined the chat`, timestamp: Date.now() }, ws);
+        // Broadcast updated online list
+        sendOnlineUsers();
+        break;
+      }
+
+      case 'get_history': {
+        if (!myEmail) return;
+        const withEmail = (msg.with || '').trim().toLowerCase();
+        if (!withEmail) return;
+        const messages = await getHistory(myEmail, withEmail);
+        ws.send(JSON.stringify({ type: 'history', with: withEmail, messages }));
         break;
       }
 
       case 'message': {
-        if (!client.username) return;
+        if (!myEmail) return;
+        const to = (msg.to || '').trim().toLowerCase();
         const text = (msg.text || '').trim().slice(0, 2000);
-        if (!text) return;
+        if (!to || !text) return;
 
         const message = {
           id: generateId(),
-          type: 'message',
-          authorId: client.id,
-          author: client.username,
-          color: client.color,
+          from: myEmail,
+          to,
           text,
           timestamp: Date.now(),
           replyTo: msg.replyTo || null
         };
 
         await saveMessage(message);
-        broadcastAll({ type: 'message', message });
+
+        // Send to recipient if online
+        sendTo(to, { type: 'message', message });
+
+        // Echo back to sender
+        ws.send(JSON.stringify({ type: 'message', message }));
         break;
       }
 
       case 'typing': {
-        if (!client.username) return;
-        broadcast({ type: 'typing', authorId: client.id, author: client.username, isTyping: !!msg.isTyping }, ws);
+        if (!myEmail) return;
+        const to = (msg.to || '').trim().toLowerCase();
+        sendTo(to, { type: 'typing', from: myEmail, isTyping: !!msg.isTyping });
+        break;
+      }
+
+      case 'search_user': {
+        const email = (msg.email || '').trim().toLowerCase();
+        const online = clients.has(email);
+        // Check if they exist in message history
+        let known = false;
+        if (db) {
+          const count = await db.collection('messages').countDocuments({
+            $or: [{ from: email }, { to: email }]
+          });
+          known = count > 0;
+        }
+        ws.send(JSON.stringify({ type: 'search_result', email, online, known }));
         break;
       }
     }
   });
 
   ws.on('close', () => {
-    const username = client.username;
-    clients.delete(ws);
-    if (username) {
-      const userList = [...clients.values()]
-        .filter(c => c.username)
-        .map(c => ({ id: c.id, username: c.username, color: c.color }));
-      broadcastAll({ type: 'users', users: userList });
-      broadcastAll({ type: 'system', text: `${username} left the chat`, timestamp: Date.now() });
+    if (myEmail && clients.get(myEmail) === ws) {
+      clients.delete(myEmail);
+      sendOnlineUsers();
     }
   });
 
-  ws.on('error', () => clients.delete(ws));
+  ws.on('error', () => {
+    if (myEmail && clients.get(myEmail) === ws) {
+      clients.delete(myEmail);
+    }
+  });
 });
 
 const PORT = process.env.PORT || 3000;
-
 connectDB().then(() => {
   server.listen(PORT, () => console.log(`Chat server running at http://localhost:${PORT}`));
 });
