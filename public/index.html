@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chat</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --bg2: #f4f4f5;
+    --bg3: #e4e4e7;
+    --border: #d4d4d8;
+    --text: #18181b;
+    --text2: #71717a;
+    --accent: #4f9ef8;
+    --accent-hover: #3b82f6;
+    --reply-bg: #f0f9ff;
+    --reply-border: #93c5fd;
+    --system-text: #71717a;
+    --input-bg: #ffffff;
+    --shadow: rgba(0,0,0,0.08);
+    --emoji-bg: #ffffff;
+    --highlight: #fef9c3;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #111113;
+      --bg2: #1c1c1f;
+      --bg3: #27272a;
+      --border: #3f3f46;
+      --text: #fafafa;
+      --text2: #a1a1aa;
+      --accent: #4f9ef8;
+      --accent-hover: #60a5fa;
+      --reply-bg: #1e2d3d;
+      --reply-border: #3b82f6;
+      --system-text: #71717a;
+      --input-bg: #1c1c1f;
+      --shadow: rgba(0,0,0,0.4);
+      --emoji-bg: #27272a;
+      --highlight: #3d3700;
+    }
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); font-size: 14px; }
+
+  /* Layout */
+  #app { display: flex; height: 100vh; overflow: hidden; }
+  #sidebar { width: 220px; background: var(--bg2); border-right: 1px solid var(--border); display: flex; flex-direction: column; flex-shrink: 0; }
+  #main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+
+  /* Sidebar */
+  .sidebar-header { padding: 16px; border-bottom: 1px solid var(--border); }
+  .sidebar-header h1 { font-size: 16px; font-weight: 700; letter-spacing: -0.02em; }
+  .sidebar-header p { font-size: 12px; color: var(--text2); margin-top: 2px; }
+  #user-list { flex: 1; overflow-y: auto; padding: 8px; }
+  .user-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; font-size: 13px; }
+  .user-avatar { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; color: #fff; flex-shrink: 0; }
+  .user-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .users-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text2); padding: 8px 8px 4px; font-weight: 600; }
+
+  /* Header */
+  #header { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--bg); flex-shrink: 0; }
+  #header h2 { font-size: 15px; font-weight: 600; flex: 1; }
+  #search-btn { background: none; border: 1px solid var(--border); border-radius: 6px; color: var(--text2); cursor: pointer; padding: 6px 10px; font-size: 13px; display: flex; align-items: center; gap: 5px; transition: border-color 0.15s; }
+  #search-btn:hover { border-color: var(--accent); color: var(--accent); }
+  #search-bar { display: none; flex: 1; position: relative; }
+  #search-bar.visible { display: flex; align-items: center; }
+  #search-input { flex: 1; background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; padding: 6px 32px 6px 10px; color: var(--text); font-size: 13px; outline: none; }
+  #search-input:focus { border-color: var(--accent); }
+  #search-clear { position: absolute; right: 8px; background: none; border: none; color: var(--text2); cursor: pointer; font-size: 16px; line-height: 1; padding: 0; }
+  #search-count { font-size: 12px; color: var(--text2); white-space: nowrap; }
+
+  /* Messages */
+  #messages { flex: 1; overflow-y: auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 2px; scroll-behavior: smooth; }
+  #messages::-webkit-scrollbar { width: 6px; }
+  #messages::-webkit-scrollbar-track { background: transparent; }
+  #messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  .msg { display: flex; flex-direction: column; padding: 3px 6px; border-radius: 6px; max-width: 100%; transition: background 0.2s; }
+  .msg:hover { background: var(--bg2); }
+  .msg.highlighted { background: var(--highlight) !important; }
+  .msg.search-dim { opacity: 0.35; }
+  .msg-header { display: flex; align-items: baseline; gap: 8px; }
+  .msg-author { font-weight: 600; font-size: 13px; }
+  .msg-time { font-size: 11px; color: var(--text2); }
+  .msg-text { font-size: 14px; line-height: 1.5; word-break: break-word; margin-top: 2px; }
+  .msg-reply-quote { background: var(--reply-bg); border-left: 3px solid var(--reply-border); padding: 4px 8px; border-radius: 0 4px 4px 0; margin-bottom: 4px; font-size: 12px; color: var(--text2); cursor: pointer; max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .msg-reply-quote strong { color: var(--accent); margin-right: 4px; }
+  .msg-actions { display: none; margin-top: 2px; }
+  .msg:hover .msg-actions { display: flex; gap: 4px; }
+  .msg-action-btn { background: var(--bg3); border: none; border-radius: 4px; color: var(--text2); cursor: pointer; font-size: 12px; padding: 2px 8px; transition: background 0.15s, color 0.15s; }
+  .msg-action-btn:hover { background: var(--accent); color: #fff; }
+
+  /* System messages */
+  .msg-system { text-align: center; color: var(--system-text); font-size: 12px; padding: 4px 0; font-style: italic; }
+
+  /* Typing indicator */
+  #typing-indicator { min-height: 20px; padding: 2px 22px; font-size: 12px; color: var(--text2); font-style: italic; }
+
+  /* Reply preview */
+  #reply-preview { display: none; align-items: center; gap: 8px; padding: 8px 16px; background: var(--reply-bg); border-top: 1px solid var(--reply-border); flex-shrink: 0; }
+  #reply-preview.visible { display: flex; }
+  #reply-preview-text { flex: 1; font-size: 12px; color: var(--text2); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  #reply-preview-text strong { color: var(--accent); }
+  #reply-cancel { background: none; border: none; color: var(--text2); cursor: pointer; font-size: 18px; line-height: 1; padding: 0 2px; }
+  #reply-cancel:hover { color: var(--text); }
+
+  /* Input area */
+  #input-area { padding: 12px 16px; border-top: 1px solid var(--border); background: var(--bg); flex-shrink: 0; }
+  #input-row { display: flex; align-items: flex-end; gap: 8px; background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; padding: 6px 8px; transition: border-color 0.15s; }
+  #input-row:focus-within { border-color: var(--accent); }
+  #message-input { flex: 1; background: none; border: none; color: var(--text); font-size: 14px; outline: none; resize: none; max-height: 120px; min-height: 24px; line-height: 1.5; font-family: inherit; }
+  #message-input::placeholder { color: var(--text2); }
+  .input-btn { background: none; border: none; cursor: pointer; color: var(--text2); font-size: 18px; padding: 2px 4px; transition: color 0.15s; flex-shrink: 0; line-height: 1; }
+  .input-btn:hover { color: var(--accent); }
+  #send-btn { background: var(--accent); border: none; border-radius: 6px; color: #fff; cursor: pointer; padding: 5px 12px; font-size: 13px; font-weight: 600; transition: background 0.15s; flex-shrink: 0; }
+  #send-btn:hover { background: var(--accent-hover); }
+  #send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* Emoji picker */
+  #emoji-picker { display: none; position: absolute; bottom: 80px; right: 16px; background: var(--emoji-bg); border: 1px solid var(--border); border-radius: 10px; padding: 10px; box-shadow: 0 8px 24px var(--shadow); width: 300px; z-index: 100; }
+  #emoji-picker.visible { display: block; }
+  #emoji-search-input { width: 100%; background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; color: var(--text); font-size: 13px; outline: none; margin-bottom: 8px; }
+  #emoji-search-input:focus { border-color: var(--accent); }
+  .emoji-category-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text2); padding: 4px 2px 2px; font-weight: 600; }
+  .emoji-grid { display: flex; flex-wrap: wrap; gap: 2px; margin-bottom: 6px; }
+  .emoji-btn { background: none; border: none; font-size: 20px; cursor: pointer; padding: 3px; border-radius: 4px; line-height: 1; transition: background 0.1s; }
+  .emoji-btn:hover { background: var(--bg3); }
+  #emoji-picker-scroll { max-height: 220px; overflow-y: auto; }
+
+  /* Join overlay */
+  #join-overlay { position: fixed; inset: 0; background: var(--bg); display: flex; align-items: center; justify-content: center; z-index: 200; }
+  .join-row { display: flex; gap: 8px; align-items: center; }
+  #username-input { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 9px 14px; color: var(--text); font-size: 14px; outline: none; width: 200px; }
+  #username-input:focus { border-color: var(--accent); }
+  #join-btn { background: var(--accent); border: none; border-radius: 8px; color: #fff; cursor: pointer; font-size: 14px; font-weight: 600; padding: 9px 18px; transition: background 0.15s; white-space: nowrap; }
+  #join-btn:hover { background: var(--accent-hover); }
+
+  /* Connection status */
+  #conn-status { font-size: 11px; padding: 3px 8px; border-radius: 99px; margin-left: auto; }
+  .status-connected { background: #dcfce7; color: #16a34a; }
+  .status-disconnected { background: #fee2e2; color: #dc2626; }
+  .status-connecting { background: #fef9c3; color: #ca8a04; }
+  @media (prefers-color-scheme: dark) {
+    .status-connected { background: #14532d; color: #86efac; }
+    .status-disconnected { background: #450a0a; color: #fca5a5; }
+    .status-connecting { background: #422006; color: #fde68a; }
+  }
+  @media (max-width: 600px) {
+    #sidebar { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Join overlay -->
+<div id="join-overlay">
+  <div class="join-row">
+    <input id="username-input" type="text" placeholder="Your name…" maxlength="32" autocomplete="off" />
+    <button id="join-btn">Join chat →</button>
+  </div>
+</div>
+
+<div id="app">
+  <!-- Sidebar -->
+  <div id="sidebar">
+    <div class="sidebar-header">
+      <h1>💬 Chat</h1>
+      <p id="room-label"># general</p>
+    </div>
+    <div class="users-label">Online</div>
+    <div id="user-list"></div>
+  </div>
+
+  <!-- Main -->
+  <div id="main">
+    <!-- Header -->
+    <div id="header">
+      <h2># general</h2>
+      <div id="search-bar">
+        <input id="search-input" type="text" placeholder="Search messages…" autocomplete="off" />
+        <button id="search-clear">×</button>
+      </div>
+      <span id="search-count"></span>
+      <button id="search-btn" title="Search">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+        Search
+      </button>
+      <span id="conn-status" class="status-connecting">Connecting…</span>
+    </div>
+
+    <!-- Messages -->
+    <div id="messages"></div>
+
+    <!-- Typing indicator -->
+    <div id="typing-indicator"></div>
+
+    <!-- Reply preview -->
+    <div id="reply-preview">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2.5" style="flex-shrink:0"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg>
+      <div id="reply-preview-text"></div>
+      <button id="reply-cancel" title="Cancel reply">×</button>
+    </div>
+
+    <!-- Input area -->
+    <div id="input-area">
+      <div id="input-row">
+        <textarea id="message-input" placeholder="Message #general…" rows="1"></textarea>
+        <button class="input-btn" id="emoji-btn" title="Emoji">😊</button>
+        <button id="send-btn">Send</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Emoji picker -->
+<div id="emoji-picker">
+  <input id="emoji-search-input" type="text" placeholder="Search emoji…" autocomplete="off" />
+  <div id="emoji-picker-scroll"></div>
+</div>
+
+<script>
+const EMOJI_CATEGORIES = {
+  'Smileys': ['😀','😃','😄','😁','😆','😅','😂','🤣','😊','😇','🙂','🙃','😉','😌','😍','🥰','😘','😗','😙','😚','😋','😛','😝','😜','🤪','🤨','🧐','🤓','😎','🤩','🥳','😏','😒','😞','😔','😟','😕','🙁','☹️','😣','😖','😫','😩','🥺','😢','😭','😤','😠','😡','🤬','😈','💀','😺','😸','😹','😻','😼','😽','🙀','😿','😾'],
+  'Gestures': ['👋','🤚','🖐','✋','🖖','👌','🤌','🤏','✌️','🤞','🤟','🤘','🤙','👈','👉','👆','🖕','👇','☝️','👍','👎','✊','👊','🤛','🤜','👏','🙌','👐','🤲','🤝','🙏','💪','🦾','🦿'],
+  'People': ['👶','🧒','👦','👧','🧑','👱','👨','🧔','👩','🧓','👴','👵','🙍','🙎','🙅','🙆','💁','🙋','🧏','🙇','🤦','🤷'],
+  'Nature': ['🌸','🌺','🌻','🌹','🌷','🌼','🌿','🍀','🍁','🍂','🍃','🌱','🌲','🌳','🌴','🌵','🌾','🐶','🐱','🐭','🐹','🐰','🦊','🐻','🐼','🐨','🐯','🦁','🐮','🐷','🐸','🐵','🐔','🐧','🐦','🦅','🦆','🦉','🦇','🐺','🐗','🐴','🦄','🐝','🐛','🦋','🐌','🐞','🐜'],
+  'Food': ['🍎','🍊','🍋','🍇','🍓','🫐','🍈','🍑','🥭','🍍','🥥','🥝','🍅','🥑','🍆','🥕','🌽','🍞','🥐','🧀','🥚','🍳','🥞','🧇','🥓','🍔','🍟','🌭','🍕','🌮','🌯','🥙','🧆','🍜','🍝','🍲','🍛','🍣','🍤','🦪','🍦','🍧','🍨','🍩','🍪','🎂','🍰','🧁','🍫','🍬','🍭','🍺','🍻','🥂','🍷','🥃','🍸','🍹','🧃','🧊'],
+  'Activities': ['⚽','🏀','🏈','⚾','🥎','🎾','🏐','🏉','🥏','🎱','🏓','🏸','🥊','🥋','🏋️','🤸','🏊','🚴','🎯','🎲','🎮','🕹️','🎰','🧩','🎭','🎨','🎬','🎤','🎧','🎵','🎶','🎸','🎹','🎺','🎻','🥁','🎷'],
+  'Objects': ['💡','🔦','🕯️','💰','💳','💎','⚖️','🔧','🔨','🪛','🔩','⚙️','🧲','💻','🖥️','🖨️','⌨️','🖱️','📱','📷','📸','📹','🎥','📺','📻','📡','🔭','🔬','🧪','🧬','💊','🩺','🏠','🚗','✈️','🚀','⏰','📅','📌','📎','✂️','🗑️','📦','📧','📩','📝','📖','📚','🔑','🪝','🧲'],
+  'Symbols': ['❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','❣️','💕','💞','💓','💗','💖','💘','💝','💟','☮️','✝️','☯️','🕊️','🔴','🟠','🟡','🟢','🔵','🟣','⚫','⚪','🟤','✅','❌','❎','🔅','🔆','📶','🔱','⚜️','🔰','♻️','✔️','🔝','🆕','🆒','🆓','🆙','🈵','🅰️','🅱️']
+};
+
+const ALL_EMOJIS = Object.values(EMOJI_CATEGORIES).flat();
+
+let ws = null;
+let myUsername = null;
+let replyTo = null;
+let typingTimer = null;
+let isTyping = false;
+let typingUsers = new Map();
+let allMessages = [];
+let searchQuery = '';
+let searchMatches = [];
+let searchIndex = 0;
+
+const $ = id => document.getElementById(id);
+const joinOverlay = $('join-overlay');
+const usernameInput = $('username-input');
+const joinBtn = $('join-btn');
+const messagesEl = $('messages');
+const messageInput = $('message-input');
+const sendBtn = $('send-btn');
+const emojiBtn = $('emoji-btn');
+const emojiPicker = $('emoji-picker');
+const emojiSearchInput = $('emoji-search-input');
+const emojiPickerScroll = $('emoji-picker-scroll');
+const replyPreview = $('reply-preview');
+const replyPreviewText = $('reply-preview-text');
+const replyCancel = $('reply-cancel');
+const searchBtn = $('search-btn');
+const searchBar = $('search-bar');
+const searchInput = $('search-input');
+const searchClear = $('search-clear');
+const searchCount = $('search-count');
+const connStatus = $('conn-status');
+const userList = $('user-list');
+const typingIndicator = $('typing-indicator');
+
+function connect() {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  ws = new WebSocket(`${proto}//${location.host}`);
+  ws.onopen = () => {
+    setStatus('connected');
+    if (myUsername) ws.send(JSON.stringify({ type: 'join', username: myUsername }));
+  };
+  ws.onclose = () => { setStatus('disconnected'); setTimeout(connect, 2500); };
+  ws.onerror = () => ws.close();
+  ws.onmessage = (e) => {
+    const data = JSON.parse(e.data);
+    switch (data.type) {
+      case 'history': messagesEl.innerHTML = ''; allMessages = []; data.messages.forEach(appendMessage); scrollToBottom(); break;
+      case 'message': appendMessage(data.message); if (searchQuery) applySearch(); scrollToBottomIfNear(); break;
+      case 'system': appendSystem(data.text); break;
+      case 'users': renderUsers(data.users); break;
+      case 'typing': handleTypingIndicator(data); break;
+    }
+  };
+}
+
+function setStatus(s) {
+  connStatus.className = `status-${s}`;
+  connStatus.textContent = s === 'connected' ? '● Online' : s === 'connecting' ? 'Connecting…' : '○ Offline';
+}
+
+function joinChat() {
+  const name = usernameInput.value.trim();
+  if (!name) return;
+  myUsername = name;
+  joinOverlay.style.display = 'none';
+  connect();
+}
+joinBtn.onclick = joinChat;
+usernameInput.onkeydown = e => { if (e.key === 'Enter') joinChat(); };
+
+function formatTime(ts) { return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
+function escapeHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+function appendMessage(msg) {
+  allMessages.push(msg);
+  const el = document.createElement('div');
+  el.className = 'msg';
+  el.dataset.id = msg.id;
+  let html = '';
+  if (msg.replyTo) {
+    html += `<div class="msg-reply-quote" data-ref="${escapeHtml(msg.replyTo.id)}"><strong>↩ ${escapeHtml(msg.replyTo.author)}</strong>${escapeHtml(msg.replyTo.text.slice(0,80))}${msg.replyTo.text.length>80?'…':''}</div>`;
+  }
+  html += `<div class="msg-header"><span class="msg-author" style="color:${escapeHtml(msg.color)}">${escapeHtml(msg.author)}</span><span class="msg-time">${formatTime(msg.timestamp)}</span></div><div class="msg-text">${escapeHtml(msg.text)}</div><div class="msg-actions"><button class="msg-action-btn reply-btn">↩ Reply</button></div>`;
+  el.innerHTML = html;
+  el.querySelector('.reply-btn').onclick = () => startReply(msg);
+  const quote = el.querySelector('.msg-reply-quote');
+  if (quote) quote.onclick = () => jumpToMessage(quote.dataset.ref);
+  messagesEl.appendChild(el);
+}
+
+function appendSystem(text) {
+  const el = document.createElement('div');
+  el.className = 'msg-system';
+  el.textContent = text;
+  messagesEl.appendChild(el);
+}
+
+function scrollToBottom() { messagesEl.scrollTop = messagesEl.scrollHeight; }
+function scrollToBottomIfNear() {
+  const { scrollTop, scrollHeight, clientHeight } = messagesEl;
+  if (scrollHeight - scrollTop - clientHeight < 120) scrollToBottom();
+}
+
+function startReply(msg) {
+  replyTo = { id: msg.id, author: msg.author, text: msg.text };
+  replyPreviewText.innerHTML = `<strong>${escapeHtml(msg.author)}</strong> ${escapeHtml(msg.text.slice(0,80))}${msg.text.length>80?'…':''}`;
+  replyPreview.classList.add('visible');
+  messageInput.focus();
+}
+replyCancel.onclick = () => { replyTo = null; replyPreview.classList.remove('visible'); };
+
+function jumpToMessage(id) {
+  const target = messagesEl.querySelector(`[data-id="${id}"]`);
+  if (!target) return;
+  target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  target.classList.add('highlighted');
+  setTimeout(() => target.classList.remove('highlighted'), 2000);
+}
+
+function sendMessage() {
+  const text = messageInput.value.trim();
+  if (!text || !ws || ws.readyState !== 1) return;
+  ws.send(JSON.stringify({ type: 'message', text, replyTo: replyTo || null }));
+  messageInput.value = '';
+  messageInput.style.height = 'auto';
+  replyTo = null;
+  replyPreview.classList.remove('visible');
+  stopTyping();
+}
+sendBtn.onclick = sendMessage;
+messageInput.onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } };
+messageInput.oninput = () => {
+  messageInput.style.height = 'auto';
+  messageInput.style.height = Math.min(messageInput.scrollHeight, 120) + 'px';
+  handleTyping();
+};
+
+function handleTyping() {
+  if (!ws || ws.readyState !== 1) return;
+  if (!isTyping) { isTyping = true; ws.send(JSON.stringify({ type: 'typing', isTyping: true })); }
+  clearTimeout(typingTimer);
+  typingTimer = setTimeout(stopTyping, 2000);
+}
+function stopTyping() {
+  if (isTyping && ws && ws.readyState === 1) { isTyping = false; ws.send(JSON.stringify({ type: 'typing', isTyping: false })); }
+  clearTimeout(typingTimer);
+}
+function handleTypingIndicator(data) {
+  if (data.isTyping) {
+    if (typingUsers.has(data.authorId)) clearTimeout(typingUsers.get(data.authorId).timer);
+    const timer = setTimeout(() => { typingUsers.delete(data.authorId); renderTyping(); }, 3000);
+    typingUsers.set(data.authorId, { username: data.author, timer });
+  } else {
+    if (typingUsers.has(data.authorId)) { clearTimeout(typingUsers.get(data.authorId).timer); typingUsers.delete(data.authorId); }
+  }
+  renderTyping();
+}
+function renderTyping() {
+  const names = [...typingUsers.values()].map(u => u.username);
+  if (!names.length) { typingIndicator.textContent = ''; return; }
+  typingIndicator.textContent = names.length === 1 ? `${names[0]} is typing…` : names.length === 2 ? `${names[0]} and ${names[1]} are typing…` : 'Several people are typing…';
+}
+
+function renderUsers(users) {
+  userList.innerHTML = users.map(u => `<div class="user-item"><div class="user-avatar" style="background:${escapeHtml(u.color)}">${escapeHtml(u.username[0].toUpperCase())}</div><span class="user-name">${escapeHtml(u.username)}</span></div>`).join('');
+}
+
+function buildEmojiPicker(filter = '') {
+  emojiPickerScroll.innerHTML = '';
+  if (filter) {
+    const grid = document.createElement('div');
+    grid.className = 'emoji-grid';
+    ALL_EMOJIS.slice(0, 60).forEach(emoji => grid.appendChild(makeEmojiBtn(emoji)));
+    emojiPickerScroll.appendChild(grid);
+    return;
+  }
+  for (const [cat, emojis] of Object.entries(EMOJI_CATEGORIES)) {
+    const label = document.createElement('div');
+    label.className = 'emoji-category-label';
+    label.textContent = cat;
+    const grid = document.createElement('div');
+    grid.className = 'emoji-grid';
+    emojis.forEach(emoji => grid.appendChild(makeEmojiBtn(emoji)));
+    emojiPickerScroll.appendChild(label);
+    emojiPickerScroll.appendChild(grid);
+  }
+}
+function makeEmojiBtn(emoji) {
+  const btn = document.createElement('button');
+  btn.className = 'emoji-btn';
+  btn.textContent = emoji;
+  btn.onclick = () => insertEmoji(emoji);
+  return btn;
+}
+function insertEmoji(emoji) {
+  const start = messageInput.selectionStart, end = messageInput.selectionEnd, val = messageInput.value;
+  messageInput.value = val.slice(0, start) + emoji + val.slice(end);
+  messageInput.selectionStart = messageInput.selectionEnd = start + emoji.length;
+  messageInput.focus();
+}
+emojiBtn.onclick = (e) => {
+  e.stopPropagation();
+  const visible = emojiPicker.classList.toggle('visible');
+  if (visible) { buildEmojiPicker(); emojiSearchInput.value = ''; emojiSearchInput.focus(); }
+};
+emojiSearchInput.oninput = () => buildEmojiPicker(emojiSearchInput.value.trim());
+document.addEventListener('click', (e) => { if (!emojiPicker.contains(e.target) && e.target !== emojiBtn) emojiPicker.classList.remove('visible'); });
+
+searchBtn.onclick = () => {
+  searchBar.classList.toggle('visible');
+  const visible = searchBar.classList.contains('visible');
+  searchBtn.style.display = visible ? 'none' : '';
+  if (visible) searchInput.focus(); else clearSearch();
+};
+searchInput.oninput = () => { searchQuery = searchInput.value.trim().toLowerCase(); applySearch(); };
+searchInput.onkeydown = (e) => {
+  if (e.key === 'Enter' && searchMatches.length) { searchIndex = (searchIndex + 1) % searchMatches.length; scrollToMatch(); }
+  if (e.key === 'Escape') { searchBar.classList.remove('visible'); searchBtn.style.display = ''; clearSearch(); }
+};
+searchClear.onclick = () => { searchInput.value = ''; searchQuery = ''; applySearch(); searchBar.classList.remove('visible'); searchBtn.style.display = ''; };
+
+function applySearch() {
+  const msgs = messagesEl.querySelectorAll('.msg');
+  searchMatches = []; searchIndex = 0;
+  if (!searchQuery) { msgs.forEach(m => m.classList.remove('search-dim', 'highlighted')); searchCount.textContent = ''; return; }
+  msgs.forEach(m => {
+    const text = (m.querySelector('.msg-text')?.textContent || '') + ' ' + (m.querySelector('.msg-author')?.textContent || '');
+    if (text.toLowerCase().includes(searchQuery)) { m.classList.remove('search-dim'); searchMatches.push(m); }
+    else { m.classList.add('search-dim'); m.classList.remove('highlighted'); }
+  });
+  searchCount.textContent = searchMatches.length ? `${searchMatches.length} result${searchMatches.length !== 1 ? 's' : ''}` : 'No results';
+  if (searchMatches.length) scrollToMatch();
+}
+function scrollToMatch() {
+  searchMatches.forEach((m, i) => m.classList.toggle('highlighted', i === searchIndex));
+  searchMatches[searchIndex]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+function clearSearch() {
+  searchQuery = ''; searchMatches = []; searchInput.value = ''; searchCount.textContent = '';
+  messagesEl.querySelectorAll('.msg').forEach(m => m.classList.remove('search-dim', 'highlighted'));
+}
+</script>
+</body>
+</html>
