@@ -61,6 +61,7 @@
   .item-sub { font-size: 12px; color: var(--text2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 1px; }
   .item-time { font-size: 11px; color: var(--text2); flex-shrink: 0; }
   .online-dot { width: 9px; height: 9px; border-radius: 50%; background: #22c55e; flex-shrink: 0; }
+  .offline-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--border); flex-shrink: 0; }
 
   .empty-list { padding: 10px 14px; font-size: 12px; color: var(--text2); }
 
@@ -238,11 +239,8 @@
     </div>
     <div id="search-result"></div>
 
-    <div class="section-label">🟢 Online now</div>
-    <div id="online-list"><div class="empty-list">No one else online</div></div>
-
-    <div class="section-label">Recent chats</div>
-    <div id="convo-list"><div class="empty-list">No recent chats</div></div>
+    <div class="section-label">People</div>
+    <div id="people-list" style="flex:1;overflow-y:auto"><div class="empty-list">No contacts yet — search by email above to start a chat</div></div>
   </div>
 
   <!-- Main -->
@@ -268,14 +266,17 @@
     <!-- Empty state -->
     <div id="empty-state">
       <div class="big-icon">💬</div>
-      <p>Tap <strong>☰</strong> to see who's online and start a conversation</p>
+      <p>Tap <strong>☰</strong> to see your contacts and start a conversation</p>
     </div>
 
-    <!-- Message area (hidden until chat opened) -->
-    <div id="messages" style="display:none">
-      <div id="load-more-spinner">Loading…</div>
-      <button id="load-more-btn">↑ Load older messages</button>
+    <!-- Load-more bar (separate from messages so innerHTML clear is safe) -->
+    <div id="load-more-bar" style="display:none;justify-content:center;padding:6px 0;flex-shrink:0">
+      <button id="load-more-btn" style="background:var(--bg3);border:1px solid var(--border);border-radius:20px;color:var(--text2);cursor:pointer;font-size:12px;padding:6px 18px">↑ Load older messages</button>
+      <span id="load-more-spinner" style="display:none;font-size:12px;color:var(--text2);padding:6px 0">Loading…</span>
     </div>
+
+    <!-- Message area -->
+    <div id="messages" style="display:none"></div>
     <div id="typing-bar" style="display:none"></div>
     <div id="reply-preview">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2.5" style="flex-shrink:0"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg>
@@ -389,40 +390,42 @@ if(myEmail){ $('my-email-chip').textContent=myEmail; connect(); }
 
 // ── Open chat ─────────────────────────────────────────────────────
 function openChat(email) {
-  if(email===myEmail||!email) return;
-  currentChat=email; replyTo=null;
-  $('reply-preview').classList.remove('visible');
+  if(!email||email===myEmail) return;
+  const isNewChat = email !== currentChat;
+  currentChat = email;
   clearReply();
 
-  // Mobile: close sidebar
   closeSidebar();
 
-  // Update sidebar active states
+  // Sidebar active state
   document.querySelectorAll('.list-item').forEach(el=>
     el.classList.toggle('active', el.dataset.email===email));
 
-  // Update header
-  const color=colorFor(email), online=onlineUsers.includes(email);
+  // Header
+  const color=colorFor(email);
   const av=$('header-avatar');
   av.style.cssText=`display:flex;background:${color};width:32px;height:32px;border-radius:50%;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;flex-shrink:0;`;
   av.textContent=initials(email);
   $('header-info').style.display='block';
   $('header-email').textContent=email;
-  setHeaderOnline(online);
+  setHeaderOnline(onlineUsers.includes(email));
   $('header-search-btn').style.display='';
   $('back-btn').classList.remove('hidden');
   $('menu-btn').classList.add('hidden');
 
-  // Show chat UI
+  // Show chat panels
   $('empty-state').style.display='none';
+  $('load-more-bar').style.display='none';
   $('messages').style.display='flex';
   $('typing-bar').style.display='block';
   $('input-wrap').style.display='block';
-  $('messages').innerHTML='<div id="load-more-spinner" style="display:none;align-self:center;font-size:12px;color:var(--text2);margin:6px 0">Loading…</div><button id="load-more-btn" style="display:none;align-self:center;background:var(--bg3);border:1px solid var(--border);border-radius:20px;color:var(--text2);cursor:pointer;font-size:12px;padding:6px 16px;margin:4px 0 8px;flex-shrink:0">↑ Load older messages</button>';
-  lastDate=null; oldestTimestamp=null; hasMoreHistory=false; loadingMore=false;
-  $('load-more-btn').onclick=loadOlderMessages;
 
-  if(ws&&ws.readyState===1) ws.send(JSON.stringify({type:'get_history',with:email}));
+  // Only reload history if switching to a different conversation
+  if(isNewChat) {
+    $('messages').innerHTML='';
+    lastDate=null; oldestTimestamp=null; hasMoreHistory=false; loadingMore=false;
+    if(ws&&ws.readyState===1) ws.send(JSON.stringify({type:'get_history',with:email}));
+  }
   $('msg-input').focus();
 }
 function setHeaderOnline(online){
@@ -437,10 +440,9 @@ function closeSidebar(){ $('sidebar').classList.remove('open'); $('overlay').cla
 $('menu-btn').onclick=openSidebar;
 $('overlay').onclick=closeSidebar;
 $('back-btn').onclick=()=>{
-  // On mobile go back to list; on desktop just show sidebar
   if(window.innerWidth<=700){
-    // hide conversation, show empty state, show menu button
     $('empty-state').style.display='flex';
+    $('load-more-bar').style.display='none';
     $('messages').style.display='none';
     $('typing-bar').style.display='none';
     $('input-wrap').style.display='none';
@@ -450,8 +452,7 @@ $('back-btn').onclick=()=>{
     $('header-search-btn').style.display='none';
     $('back-btn').classList.add('hidden');
     $('menu-btn').classList.remove('hidden');
-    currentChat=null;
-    document.querySelectorAll('.list-item').forEach(el=>el.classList.remove('active'));
+    // Don't reset currentChat — so re-entering same chat doesn't reload
     openSidebar();
   } else {
     openSidebar();
@@ -460,57 +461,55 @@ $('back-btn').onclick=()=>{
 
 // ── Render messages ───────────────────────────────────────────────
 function renderHistory(msgs, hasMore) {
-  // Keep the load-more controls at top, remove everything else
-  const spinner=$('load-more-spinner'), btn=$('load-more-btn');
-  // Clear messages except controls
-  Array.from($('messages').children).forEach(c=>{ if(c!==spinner&&c!==btn) c.remove(); });
+  $('messages').innerHTML='';   // safe simple clear — controls are outside
   lastDate=null;
   msgs.forEach(addMsg);
   if(msgs.length) oldestTimestamp=msgs[0].timestamp;
-  hasMoreHistory=!!hasMore;
-  if(btn) btn.style.display=hasMoreHistory?'':'none';
+  setHasMore(!!hasMore);
   scrollBottom();
   if(searchActive&&searchQuery) applySearch();
 }
 function prependHistory(msgs, hasMore) {
-  if(!msgs.length) { loadingMore=false; return; }
+  if(!msgs.length){ loadingMore=false; setLoadingSpinner(false); return; }
   const el=$('messages');
-  const spinner=$('load-more-spinner'), btn=$('load-more-btn');
   const prevHeight=el.scrollHeight;
-  // Insert before first real message (after controls)
-  const anchor=btn?btn.nextSibling:el.firstChild;
-  // Build a fragment
   const frag=document.createDocumentFragment();
   const savedLastDate=lastDate; lastDate=null;
   msgs.forEach(msg=>{
     const dateStr=fmtDate(msg.timestamp);
     if(dateStr!==lastDate){
       lastDate=dateStr;
-      const div=document.createElement('div');
-      div.className='date-divider'; div.textContent=dateStr;
-      frag.appendChild(div);
+      const d=document.createElement('div'); d.className='date-divider'; d.textContent=dateStr;
+      frag.appendChild(d);
     }
     frag.appendChild(buildMsgEl(msg));
   });
-  lastDate=savedLastDate; // restore so future addMsg calls are correct
-  el.insertBefore(frag, anchor);
-  // Restore scroll so user doesn't jump
-  el.scrollTop+=el.scrollHeight-prevHeight;
+  lastDate=savedLastDate;
+  el.insertBefore(frag, el.firstChild);
+  el.scrollTop+=el.scrollHeight-prevHeight;  // no jump
   oldestTimestamp=msgs[0].timestamp;
-  hasMoreHistory=!!hasMore;
-  if(btn) btn.style.display=hasMoreHistory?'':'none';
-  if(spinner) spinner.style.display='none';
+  setHasMore(!!hasMore);
+  setLoadingSpinner(false);
   loadingMore=false;
+}
+function setHasMore(val){
+  hasMoreHistory=val;
+  $('load-more-bar').style.display=val?'flex':'none';
+  $('load-more-btn').style.display=val?'':'none';
+  $('load-more-spinner').style.display='none';
+}
+function setLoadingSpinner(val){
+  $('load-more-bar').style.display='flex';
+  $('load-more-spinner').style.display=val?'':'none';
+  $('load-more-btn').style.display=val?'none':'';
 }
 function loadOlderMessages(){
   if(loadingMore||!hasMoreHistory||!currentChat||!ws||ws.readyState!==1) return;
   loadingMore=true;
-  const spinner=$('load-more-spinner'), btn=$('load-more-btn');
-  if(spinner) spinner.style.display='block';
-  if(btn) btn.style.display='none';
+  setLoadingSpinner(true);
   ws.send(JSON.stringify({type:'get_history',with:currentChat,before:oldestTimestamp}));
 }
-// Scroll-up to load more
+$('load-more-btn').onclick=loadOlderMessages;
 $('messages').addEventListener('scroll',()=>{
   if($('messages').scrollTop<60&&hasMoreHistory&&!loadingMore) loadOlderMessages();
 });
@@ -604,38 +603,50 @@ function jumpTo(id){
   t.classList.add('highlighted'); setTimeout(()=>t.classList.remove('highlighted'),2000);
 }
 
-// ── Render sidebar lists ──────────────────────────────────────────
+// ── Render people list (online + offline contacts merged) ─────────
+let _convos = [];
+
 function renderConvos(convos) {
-  const el=$('convo-list');
-  if(!convos.length){ el.innerHTML='<div class="empty-list">No recent chats</div>'; return; }
-  el.innerHTML='';
-  convos.forEach(c=>{
-    const isMe=c.lastMessage.from===myEmail;
-    const color=colorFor(c.with);
-    const div=document.createElement('div');
-    div.className='list-item'; div.dataset.email=c.with;
-    if(c.with===currentChat) div.classList.add('active');
-    div.innerHTML=`<div class="avatar" style="background:${color}">${initials(c.with)}</div><div class="item-info"><div class="item-email">${esc(c.with)}</div><div class="item-sub">${isMe?'You: ':''}${esc((c.lastMessage.text||'').slice(0,40))}</div></div><div class="item-time">${fmtTime(c.lastMessage.timestamp)}</div>`;
-    div.onclick=()=>openChat(c.with);
-    el.appendChild(div);
-  });
+  _convos = convos;
+  renderPeople();
 }
 function renderOnline(users) {
-  onlineUsers=users.filter(u=>u!==myEmail);
-  const el=$('online-list');
-  if(!onlineUsers.length){ el.innerHTML='<div class="empty-list">No one else online</div>'; return; }
+  onlineUsers = users.filter(u=>u!==myEmail);
+  renderPeople();
+  if(currentChat) setHeaderOnline(onlineUsers.includes(currentChat));
+}
+function renderPeople() {
+  const el=$('people-list');
+  const seen=new Set();
+  const items=[];
+  // Conversation contacts first (most recent first)
+  _convos.forEach(c=>{ seen.add(c.with); items.push({email:c.with, convo:c}); });
+  // Online users not yet in list
+  onlineUsers.forEach(email=>{ if(!seen.has(email)){ seen.add(email); items.push({email, convo:null}); } });
+
+  if(!items.length){ el.innerHTML='<div class="empty-list">No contacts yet — search by email above to start a chat</div>'; return; }
   el.innerHTML='';
-  onlineUsers.forEach(email=>{
+  items.forEach(({email,convo})=>{
+    const isOnline=onlineUsers.includes(email);
     const color=colorFor(email);
     const div=document.createElement('div');
     div.className='list-item'; div.dataset.email=email;
     if(email===currentChat) div.classList.add('active');
-    div.innerHTML=`<div class="avatar" style="background:${color}">${initials(email)}</div><div class="item-info"><div class="item-email">${esc(email)}</div><div class="item-sub">Tap to chat</div></div><div class="online-dot"></div>`;
+    const dot=isOnline
+      ? '<div class="online-dot"></div>'
+      : '<div class="offline-dot" title="Offline — message will be delivered when they come online"></div>';
+    let sub='', time='';
+    if(convo){
+      const isMe=convo.lastMessage.from===myEmail;
+      sub=`${isMe?'You: ':''}${esc((convo.lastMessage.text||'').slice(0,36))}`;
+      time=`<div class="item-time">${fmtTime(convo.lastMessage.timestamp)}</div>`;
+    } else {
+      sub=isOnline?'Tap to chat':'';
+    }
+    div.innerHTML=`<div class="avatar" style="background:${color}">${initials(email)}</div><div class="item-info"><div class="item-email">${esc(email)}</div><div class="item-sub">${sub}</div></div>${time}${dot}`;
     div.onclick=()=>openChat(email);
     el.appendChild(div);
   });
-  // Update header if in a chat
-  if(currentChat) setHeaderOnline(onlineUsers.includes(currentChat));
 }
 function refreshConvos(){
   if(ws&&ws.readyState===1) ws.send(JSON.stringify({type:'join',email:myEmail}));
