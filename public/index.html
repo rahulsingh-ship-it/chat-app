@@ -2,627 +2,648 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Chat</title>
 <style>
   :root {
     --bg: #ffffff; --bg2: #f4f4f5; --bg3: #e4e4e7; --border: #d4d4d8;
     --text: #18181b; --text2: #71717a; --accent: #4f9ef8; --accent-hover: #3b82f6;
-    --reply-bg: #f0f9ff; --reply-border: #93c5fd; --shadow: rgba(0,0,0,0.08);
-    --emoji-bg: #ffffff; --highlight: #fef9c3; --unread: #ef4444;
+    --reply-bg: #f0f9ff; --reply-border: #93c5fd;
+    --shadow: rgba(0,0,0,0.10); --emoji-bg: #ffffff;
+    --highlight: #fef9c3; --safe-bottom: env(safe-area-inset-bottom, 0px);
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #111113; --bg2: #1c1c1f; --bg3: #27272a; --border: #3f3f46;
       --text: #fafafa; --text2: #a1a1aa; --accent: #4f9ef8; --accent-hover: #60a5fa;
-      --reply-bg: #1e2d3d; --reply-border: #3b82f6; --shadow: rgba(0,0,0,0.4);
-      --emoji-bg: #27272a; --highlight: #3d3700; --unread: #f87171;
+      --reply-bg: #1e2d3d; --reply-border: #3b82f6;
+      --shadow: rgba(0,0,0,0.45); --emoji-bg: #27272a; --highlight: #3d3700;
     }
   }
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); font-size: 14px; }
+  html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); font-size: 14px; overflow: hidden; }
 
-  /* Layout */
-  #app { display: flex; height: 100vh; overflow: hidden; }
-  #sidebar { width: 260px; background: var(--bg2); border-right: 1px solid var(--border); display: flex; flex-direction: column; flex-shrink: 0; }
-  #main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  /* ── Layout ────────────────────────────────────────────────── */
+  #app { display: flex; height: 100dvh; overflow: hidden; position: relative; }
 
-  /* Email overlay */
-  #email-overlay { position: fixed; inset: 0; background: var(--bg); display: flex; align-items: center; justify-content: center; z-index: 200; }
-  .email-card { display: flex; flex-direction: column; gap: 10px; align-items: center; }
-  .email-card h2 { font-size: 18px; font-weight: 700; margin-bottom: 4px; }
-  .email-card p { font-size: 13px; color: var(--text2); margin-bottom: 6px; }
-  #email-input { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 9px 14px; color: var(--text); font-size: 14px; outline: none; width: 260px; }
-  #email-input:focus { border-color: var(--accent); }
-  #email-btn { background: var(--accent); border: none; border-radius: 8px; color: #fff; cursor: pointer; font-size: 14px; font-weight: 600; padding: 9px 0; width: 260px; transition: background 0.15s; }
-  #email-btn:hover { background: var(--accent-hover); }
-
-  /* Sidebar */
-  .sidebar-top { padding: 14px 12px 10px; border-bottom: 1px solid var(--border); }
-  .sidebar-top h1 { font-size: 15px; font-weight: 700; margin-bottom: 10px; }
-  .search-row { display: flex; gap: 6px; }
-  #user-search { flex: 1; background: var(--bg3); border: 1px solid var(--border); border-radius: 7px; padding: 6px 10px; color: var(--text); font-size: 13px; outline: none; }
-  #user-search:focus { border-color: var(--accent); }
-  #search-go { background: var(--accent); border: none; border-radius: 7px; color: #fff; cursor: pointer; font-size: 13px; font-weight: 600; padding: 6px 12px; white-space: nowrap; }
-  #search-result { font-size: 12px; padding: 6px 2px; color: var(--text2); }
-  #search-result a { color: var(--accent); cursor: pointer; text-decoration: none; font-weight: 500; }
-
-  .section-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text2); padding: 10px 12px 4px; font-weight: 600; }
-  #convo-list, #online-list { overflow-y: auto; }
-  #convo-list { flex: 1; }
-
-  .convo-item, .user-item {
-    display: flex; align-items: center; gap: 9px; padding: 8px 12px;
-    cursor: pointer; border-radius: 0; transition: background 0.12s;
+  /* ── Sidebar ───────────────────────────────────────────────── */
+  #sidebar {
+    width: 300px; background: var(--bg2); border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; flex-shrink: 0; overflow: hidden;
+    transition: transform 0.22s ease;
   }
-  .convo-item:hover, .user-item:hover, .convo-item.active, .user-item.active { background: var(--bg3); }
-  .avatar { width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; color: #fff; flex-shrink: 0; }
-  .convo-info { flex: 1; min-width: 0; }
-  .convo-email { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .convo-preview { font-size: 12px; color: var(--text2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 1px; }
-  .convo-time { font-size: 11px; color: var(--text2); flex-shrink: 0; }
-  .online-dot { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; flex-shrink: 0; }
+  .sidebar-header { display: flex; align-items: center; gap: 10px; padding: 14px 14px 10px; border-bottom: 1px solid var(--border); }
+  .sidebar-header h1 { font-size: 16px; font-weight: 700; flex: 1; }
+  #my-email-chip { font-size: 11px; color: var(--text2); background: var(--bg3); border-radius: 20px; padding: 3px 8px; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-  /* Empty state */
-  #empty-state { flex: 1; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 8px; color: var(--text2); }
-  #empty-state p { font-size: 13px; }
+  .search-box { padding: 10px 12px; display: flex; gap: 6px; }
+  #user-search { flex: 1; background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; color: var(--text); font-size: 13px; outline: none; min-width: 0; }
+  #user-search:focus { border-color: var(--accent); }
+  #search-go { background: var(--accent); border: none; border-radius: 8px; color: #fff; cursor: pointer; font-size: 13px; font-weight: 600; padding: 8px 14px; white-space: nowrap; }
+  #search-go:active { background: var(--accent-hover); }
+  #search-result { font-size: 12px; padding: 0 12px 8px; color: var(--text2); line-height: 1.5; }
+  #search-result a { color: var(--accent); cursor: pointer; font-weight: 600; }
 
-  /* Header */
-  #header { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--bg); flex-shrink: 0; min-height: 53px; }
-  #header-avatar { width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: #fff; flex-shrink: 0; }
-  #header-email { font-size: 14px; font-weight: 600; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  #header-status { font-size: 11px; color: #22c55e; }
-  #search-btn { background: none; border: 1px solid var(--border); border-radius: 6px; color: var(--text2); cursor: pointer; padding: 5px 10px; font-size: 13px; display: flex; align-items: center; gap: 5px; }
-  #search-btn:hover { border-color: var(--accent); color: var(--accent); }
-  #msg-search-bar { display: none; flex: 1; position: relative; }
-  #msg-search-bar.visible { display: flex; align-items: center; }
-  #msg-search-input { flex: 1; background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; padding: 6px 28px 6px 10px; color: var(--text); font-size: 13px; outline: none; }
+  .section-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text2); padding: 10px 14px 4px; font-weight: 700; }
+  #convo-list, #online-list { overflow-y: auto; }
+  #convo-list { max-height: 50%; }
+  #online-list { flex: 1; overflow-y: auto; }
+
+  .list-item {
+    display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+    cursor: pointer; transition: background 0.12s; -webkit-tap-highlight-color: transparent;
+  }
+  .list-item:hover, .list-item:active { background: var(--bg3); }
+  .list-item.active { background: var(--bg3); }
+  .avatar { width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 700; color: #fff; flex-shrink: 0; }
+  .item-info { flex: 1; min-width: 0; }
+  .item-email { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .item-sub { font-size: 12px; color: var(--text2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 1px; }
+  .item-time { font-size: 11px; color: var(--text2); flex-shrink: 0; }
+  .online-dot { width: 9px; height: 9px; border-radius: 50%; background: #22c55e; flex-shrink: 0; }
+
+  .empty-list { padding: 10px 14px; font-size: 12px; color: var(--text2); }
+
+  /* ── Main panel ─────────────────────────────────────────────── */
+  #main { flex: 1; display: flex; flex-direction: column; min-width: 0; background: var(--bg); }
+
+  /* ── Header ─────────────────────────────────────────────────── */
+  #header {
+    display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+    border-bottom: 1px solid var(--border); background: var(--bg);
+    flex-shrink: 0; min-height: 54px;
+  }
+  #back-btn { display: none; background: none; border: none; cursor: pointer; color: var(--accent); font-size: 22px; line-height: 1; padding: 4px 8px 4px 0; -webkit-tap-highlight-color: transparent; }
+  #menu-btn { display: none; background: none; border: none; cursor: pointer; color: var(--text); font-size: 22px; line-height: 1; padding: 4px; -webkit-tap-highlight-color: transparent; }
+  #header-avatar { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; color: #fff; flex-shrink: 0; }
+  #header-info { flex: 1; min-width: 0; }
+  #header-email { font-size: 14px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #header-status { font-size: 11px; color: var(--text2); }
+  #header-status.online { color: #22c55e; }
+  #header-search-btn { background: none; border: 1px solid var(--border); border-radius: 7px; color: var(--text2); cursor: pointer; padding: 6px 10px; font-size: 13px; white-space: nowrap; flex-shrink: 0; -webkit-tap-highlight-color: transparent; }
+  #header-search-btn:active { border-color: var(--accent); color: var(--accent); }
+  #conn-status { font-size: 11px; padding: 3px 10px; border-radius: 20px; flex-shrink: 0; }
+  .s-connected { background: #dcfce7; color: #16a34a; }
+  .s-disconnected { background: #fee2e2; color: #dc2626; }
+  .s-connecting { background: #fef9c3; color: #ca8a04; }
+  @media (prefers-color-scheme: dark) {
+    .s-connected { background: #14532d; color: #86efac; }
+    .s-disconnected { background: #450a0a; color: #fca5a5; }
+    .s-connecting { background: #422006; color: #fde68a; }
+  }
+
+  /* Search bar in header */
+  #msg-search-wrap { display: none; flex: 1; align-items: center; gap: 6px; }
+  #msg-search-wrap.visible { display: flex; }
+  #msg-search-input { flex: 1; background: var(--bg2); border: 1px solid var(--border); border-radius: 7px; padding: 7px 10px; color: var(--text); font-size: 13px; outline: none; }
   #msg-search-input:focus { border-color: var(--accent); }
-  #msg-search-clear { position: absolute; right: 8px; background: none; border: none; color: var(--text2); cursor: pointer; font-size: 16px; line-height: 1; }
   #msg-search-count { font-size: 12px; color: var(--text2); white-space: nowrap; }
+  #msg-search-close { background: none; border: none; color: var(--text2); cursor: pointer; font-size: 20px; line-height: 1; padding: 0 4px; }
 
-  /* Messages */
-  #messages { flex: 1; overflow-y: auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 2px; scroll-behavior: smooth; }
-  #messages::-webkit-scrollbar { width: 6px; }
+  /* ── Empty / welcome state ──────────────────────────────────── */
+  #empty-state { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: var(--text2); padding: 24px; text-align: center; }
+  #empty-state .big-icon { font-size: 52px; }
+  #empty-state p { font-size: 14px; line-height: 1.5; }
+
+  /* ── Messages ───────────────────────────────────────────────── */
+  #messages { flex: 1; overflow-y: auto; padding: 10px 14px; display: flex; flex-direction: column; gap: 2px; scroll-behavior: smooth; -webkit-overflow-scrolling: touch; }
+  #messages::-webkit-scrollbar { width: 5px; }
   #messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-  .msg { display: flex; flex-direction: column; padding: 3px 6px; border-radius: 6px; transition: background 0.15s; }
+  .date-divider { text-align: center; font-size: 11px; color: var(--text2); padding: 8px 0 4px; }
+  .msg { padding: 4px 8px; border-radius: 8px; transition: background 0.12s; }
   .msg:hover { background: var(--bg2); }
   .msg.highlighted { background: var(--highlight) !important; }
-  .msg.search-dim { opacity: 0.3; }
+  .msg.dim { opacity: 0.25; }
   .msg-header { display: flex; align-items: baseline; gap: 8px; }
-  .msg-author { font-weight: 600; font-size: 13px; }
+  .msg-author { font-weight: 700; font-size: 13px; }
   .msg-time { font-size: 11px; color: var(--text2); }
-  .msg-text { font-size: 14px; line-height: 1.5; word-break: break-word; margin-top: 2px; }
-  .msg-reply-quote { background: var(--reply-bg); border-left: 3px solid var(--reply-border); padding: 4px 8px; border-radius: 0 4px 4px 0; margin-bottom: 4px; font-size: 12px; color: var(--text2); cursor: pointer; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-  .msg-reply-quote strong { color: var(--accent); margin-right: 4px; }
-  .msg-actions { display: none; margin-top: 2px; }
-  .msg:hover .msg-actions { display: flex; gap: 4px; }
-  .msg-action-btn { background: var(--bg3); border: none; border-radius: 4px; color: var(--text2); cursor: pointer; font-size: 12px; padding: 2px 8px; transition: background 0.15s, color 0.15s; }
-  .msg-action-btn:hover { background: var(--accent); color: #fff; }
-  .date-divider { text-align: center; font-size: 11px; color: var(--text2); padding: 8px 0; }
+  .msg-body { margin-top: 2px; }
+  .msg-text { font-size: 14px; line-height: 1.55; word-break: break-word; }
+  .reply-quote { background: var(--reply-bg); border-left: 3px solid var(--reply-border); padding: 4px 8px; border-radius: 0 5px 5px 0; margin-bottom: 4px; font-size: 12px; color: var(--text2); cursor: pointer; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .reply-quote strong { color: var(--accent); margin-right: 4px; }
+  .msg-actions { display: none; margin-top: 3px; }
+  .msg:hover .msg-actions, .msg:focus-within .msg-actions { display: flex; gap: 4px; }
+  .msg-action { background: var(--bg3); border: none; border-radius: 5px; color: var(--text2); cursor: pointer; font-size: 12px; padding: 3px 10px; -webkit-tap-highlight-color: transparent; }
+  .msg-action:hover, .msg-action:active { background: var(--accent); color: #fff; }
 
-  /* Typing */
-  #typing-indicator { min-height: 20px; padding: 2px 22px; font-size: 12px; color: var(--text2); font-style: italic; }
+  /* Mobile: always show reply button (touch users can't hover) */
+  @media (max-width: 700px) { .msg-actions { display: flex; } }
 
-  /* Reply preview */
-  #reply-preview { display: none; align-items: center; gap: 8px; padding: 8px 16px; background: var(--reply-bg); border-top: 1px solid var(--reply-border); flex-shrink: 0; }
+  /* ── Typing ─────────────────────────────────────────────────── */
+  #typing-bar { min-height: 18px; padding: 0 22px 2px; font-size: 12px; color: var(--text2); font-style: italic; }
+
+  /* ── Reply preview ──────────────────────────────────────────── */
+  #reply-preview { display: none; align-items: center; gap: 8px; padding: 8px 14px; background: var(--reply-bg); border-top: 1px solid var(--reply-border); flex-shrink: 0; }
   #reply-preview.visible { display: flex; }
-  #reply-preview-text { flex: 1; font-size: 12px; color: var(--text2); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-  #reply-preview-text strong { color: var(--accent); }
-  #reply-cancel { background: none; border: none; color: var(--text2); cursor: pointer; font-size: 18px; line-height: 1; }
+  #reply-text { flex: 1; font-size: 12px; color: var(--text2); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  #reply-text strong { color: var(--accent); }
+  #reply-cancel { background: none; border: none; color: var(--text2); cursor: pointer; font-size: 22px; line-height: 1; flex-shrink: 0; }
 
-  /* Input */
-  #input-area { padding: 12px 16px; border-top: 1px solid var(--border); background: var(--bg); flex-shrink: 0; }
-  #input-row { display: flex; align-items: flex-end; gap: 8px; background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; padding: 6px 8px; transition: border-color 0.15s; }
+  /* ── Input area ─────────────────────────────────────────────── */
+  #input-wrap { padding: 10px 12px calc(10px + var(--safe-bottom)); border-top: 1px solid var(--border); background: var(--bg); flex-shrink: 0; }
+  #input-row { display: flex; align-items: flex-end; gap: 6px; background: var(--bg2); border: 1.5px solid var(--border); border-radius: 12px; padding: 6px 8px; transition: border-color 0.15s; }
   #input-row:focus-within { border-color: var(--accent); }
-  #message-input { flex: 1; background: none; border: none; color: var(--text); font-size: 14px; outline: none; resize: none; max-height: 120px; min-height: 24px; line-height: 1.5; font-family: inherit; }
-  #message-input::placeholder { color: var(--text2); }
-  .input-btn { background: none; border: none; cursor: pointer; color: var(--text2); font-size: 18px; padding: 2px 4px; transition: color 0.15s; line-height: 1; }
-  .input-btn:hover { color: var(--accent); }
-  #send-btn { background: var(--accent); border: none; border-radius: 6px; color: #fff; cursor: pointer; padding: 5px 12px; font-size: 13px; font-weight: 600; transition: background 0.15s; }
-  #send-btn:hover { background: var(--accent-hover); }
+  #msg-input { flex: 1; background: none; border: none; color: var(--text); font-size: 15px; outline: none; resize: none; max-height: 110px; min-height: 26px; line-height: 1.5; font-family: inherit; }
+  #msg-input::placeholder { color: var(--text2); }
+  #emoji-toggle { background: none; border: none; cursor: pointer; font-size: 22px; padding: 1px 3px; line-height: 1; -webkit-tap-highlight-color: transparent; }
+  #emoji-toggle:hover { opacity: 0.75; }
+  #send-btn { background: var(--accent); border: none; border-radius: 8px; color: #fff; cursor: pointer; padding: 7px 14px; font-size: 14px; font-weight: 700; flex-shrink: 0; -webkit-tap-highlight-color: transparent; }
+  #send-btn:active { background: var(--accent-hover); }
 
-  /* Emoji picker */
-  #emoji-picker { display: none; position: absolute; bottom: 80px; right: 16px; background: var(--emoji-bg); border: 1px solid var(--border); border-radius: 10px; padding: 10px; box-shadow: 0 8px 24px var(--shadow); width: 300px; z-index: 100; }
-  #emoji-picker.visible { display: block; }
-  #emoji-search-input { width: 100%; background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; color: var(--text); font-size: 13px; outline: none; margin-bottom: 8px; }
-  .emoji-category-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text2); padding: 4px 2px 2px; font-weight: 600; }
-  .emoji-grid { display: flex; flex-wrap: wrap; gap: 2px; margin-bottom: 6px; }
-  .emoji-btn { background: none; border: none; font-size: 20px; cursor: pointer; padding: 3px; border-radius: 4px; line-height: 1; }
-  .emoji-btn:hover { background: var(--bg3); }
-  #emoji-picker-scroll { max-height: 220px; overflow-y: auto; }
-
-  /* Connection status */
-  #conn-status { font-size: 11px; padding: 3px 8px; border-radius: 99px; }
-  .status-connected { background: #dcfce7; color: #16a34a; }
-  .status-disconnected { background: #fee2e2; color: #dc2626; }
-  .status-connecting { background: #fef9c3; color: #ca8a04; }
-  @media (prefers-color-scheme: dark) {
-    .status-connected { background: #14532d; color: #86efac; }
-    .status-disconnected { background: #450a0a; color: #fca5a5; }
-    .status-connecting { background: #422006; color: #fde68a; }
+  /* ── Emoji picker ───────────────────────────────────────────── */
+  #emoji-picker {
+    display: none; position: fixed; bottom: 0; left: 0; right: 0;
+    background: var(--emoji-bg); border-top: 1px solid var(--border);
+    padding: 12px 12px calc(12px + var(--safe-bottom));
+    box-shadow: 0 -4px 20px var(--shadow); z-index: 300;
+    border-radius: 16px 16px 0 0; max-height: 50vh; overflow: hidden; display: none; flex-direction: column;
   }
-  @media (max-width: 600px) { #sidebar { display: none; } }
+  #emoji-picker.open { display: flex; }
+  #emoji-search { width: 100%; background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; color: var(--text); font-size: 14px; outline: none; margin-bottom: 8px; flex-shrink: 0; }
+  #emoji-scroll { overflow-y: auto; flex: 1; }
+  .e-cat-label { font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--text2); padding: 6px 2px 3px; letter-spacing: 0.06em; }
+  .e-grid { display: flex; flex-wrap: wrap; gap: 2px; margin-bottom: 4px; }
+  .e-btn { background: none; border: none; font-size: 24px; cursor: pointer; padding: 4px; border-radius: 6px; line-height: 1; -webkit-tap-highlight-color: transparent; }
+  .e-btn:hover, .e-btn:active { background: var(--bg3); }
+
+  /* ── Email overlay ──────────────────────────────────────────── */
+  #email-overlay { position: fixed; inset: 0; background: var(--bg); display: flex; align-items: center; justify-content: center; z-index: 500; padding: 24px; }
+  .login-card { display: flex; flex-direction: column; align-items: center; gap: 12px; width: 100%; max-width: 320px; }
+  .login-card .icon { font-size: 48px; }
+  .login-card h2 { font-size: 22px; font-weight: 800; }
+  .login-card p { font-size: 13px; color: var(--text2); text-align: center; line-height: 1.5; }
+  #email-in { background: var(--bg2); border: 1.5px solid var(--border); border-radius: 10px; padding: 12px 16px; color: var(--text); font-size: 16px; outline: none; width: 100%; }
+  #email-in:focus { border-color: var(--accent); }
+  #email-go { background: var(--accent); border: none; border-radius: 10px; color: #fff; cursor: pointer; font-size: 16px; font-weight: 700; padding: 12px; width: 100%; -webkit-tap-highlight-color: transparent; }
+  #email-go:active { background: var(--accent-hover); }
+
+  /* ── Overlay backdrop (mobile sidebar) ─────────────────────── */
+  #overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 90; }
+
+  /* ── Mobile ─────────────────────────────────────────────────── */
+  @media (max-width: 700px) {
+    #sidebar {
+      position: fixed; inset: 0 auto 0 0; width: 82vw; max-width: 320px;
+      z-index: 100; transform: translateX(-100%); box-shadow: 4px 0 24px var(--shadow);
+    }
+    #sidebar.open { transform: translateX(0); }
+    #overlay.show { display: block; }
+    #menu-btn { display: block; }
+    #back-btn { display: block; }
+    #header-search-btn span { display: none; } /* hide "Search" label on small screens */
+    /* When in conversation view, show back+avatar; when in empty state show menu */
+    #back-btn.hidden { display: none; }
+    #menu-btn.hidden { display: none; }
+  }
 </style>
 </head>
 <body>
 
-<!-- Email overlay -->
+<!-- Email login -->
 <div id="email-overlay">
-  <div class="email-card">
-    <h2>💬 Chat</h2>
-    <p>Enter your email to get started</p>
-    <input id="email-input" type="email" placeholder="you@example.com" autocomplete="email" />
-    <button id="email-btn">Continue →</button>
+  <div class="login-card">
+    <div class="icon">💬</div>
+    <h2>Chat</h2>
+    <p>Enter your email to get started.<br>We'll remember you on this device.</p>
+    <input id="email-in" type="email" placeholder="you@example.com" autocomplete="email" inputmode="email" />
+    <button id="email-go">Continue →</button>
   </div>
 </div>
+
+<!-- Mobile sidebar backdrop -->
+<div id="overlay"></div>
 
 <div id="app">
   <!-- Sidebar -->
   <div id="sidebar">
-    <div class="sidebar-top">
-      <h1>💬 Messages</h1>
-      <div class="search-row">
-        <input id="user-search" type="email" placeholder="Start chat by email…" autocomplete="off" />
-        <button id="search-go">Chat</button>
-      </div>
-      <div id="search-result"></div>
+    <div class="sidebar-header">
+      <span style="font-size:20px">💬</span>
+      <h1>Chat</h1>
+      <div id="my-email-chip">—</div>
     </div>
-    <div class="section-label">Recent</div>
-    <div id="convo-list"></div>
-    <div class="section-label">Online</div>
-    <div id="online-list"></div>
+
+    <div class="search-box">
+      <input id="user-search" type="email" placeholder="Find by email…" autocomplete="off" inputmode="email" />
+      <button id="search-go">Chat</button>
+    </div>
+    <div id="search-result"></div>
+
+    <div class="section-label">🟢 Online now</div>
+    <div id="online-list"><div class="empty-list">No one else online</div></div>
+
+    <div class="section-label">Recent chats</div>
+    <div id="convo-list"><div class="empty-list">No recent chats</div></div>
   </div>
 
   <!-- Main -->
   <div id="main">
+    <!-- Header -->
     <div id="header">
-      <span id="conn-status" class="status-connecting">Connecting…</span>
+      <button id="back-btn" class="hidden" aria-label="Back">‹</button>
+      <button id="menu-btn" aria-label="Menu">☰</button>
+      <div id="header-avatar" style="display:none"></div>
+      <div id="header-info" style="display:none">
+        <div id="header-email"></div>
+        <div id="header-status">Offline</div>
+      </div>
+      <div id="msg-search-wrap">
+        <input id="msg-search-input" type="text" placeholder="Search messages…" autocomplete="off" />
+        <span id="msg-search-count"></span>
+        <button id="msg-search-close">×</button>
+      </div>
+      <button id="header-search-btn" style="display:none"><span>🔍</span></button>
+      <span id="conn-status" class="s-connecting">Connecting…</span>
     </div>
 
     <!-- Empty state -->
     <div id="empty-state">
-      <div style="font-size:40px">💬</div>
-      <p>Select a conversation or search for someone by email</p>
+      <div class="big-icon">💬</div>
+      <p>Tap <strong>☰</strong> to see who's online and start a conversation</p>
     </div>
 
-    <!-- Messages (hidden until conversation selected) -->
+    <!-- Message area (hidden until chat opened) -->
     <div id="messages" style="display:none"></div>
-    <div id="typing-indicator" style="display:none"></div>
-
+    <div id="typing-bar" style="display:none"></div>
     <div id="reply-preview">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2.5" style="flex-shrink:0"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg>
-      <div id="reply-preview-text"></div>
-      <button id="reply-cancel">×</button>
+      <div id="reply-text"></div>
+      <button id="reply-cancel" aria-label="Cancel reply">×</button>
     </div>
-
-    <div id="input-area" style="display:none">
+    <div id="input-wrap" style="display:none">
       <div id="input-row">
-        <textarea id="message-input" placeholder="Message…" rows="1"></textarea>
-        <button class="input-btn" id="emoji-btn">😊</button>
+        <textarea id="msg-input" placeholder="Message…" rows="1"></textarea>
+        <button id="emoji-toggle" aria-label="Emoji">😊</button>
         <button id="send-btn">Send</button>
       </div>
     </div>
   </div>
 </div>
 
-<!-- Emoji picker -->
-<div id="emoji-picker">
-  <input id="emoji-search-input" type="text" placeholder="Search emoji…" autocomplete="off" />
-  <div id="emoji-picker-scroll"></div>
+<!-- Emoji picker (bottom sheet) -->
+<div id="emoji-picker" role="dialog" aria-label="Emoji picker">
+  <input id="emoji-search" type="text" placeholder="Search emoji…" autocomplete="off" />
+  <div id="emoji-scroll"></div>
 </div>
-
-<!-- Msg search bar (in header) -->
-<div id="msg-search-bar" style="display:none">
-  <input id="msg-search-input" type="text" placeholder="Search messages…" autocomplete="off" />
-  <button id="msg-search-clear">×</button>
-</div>
-<span id="msg-search-count" style="display:none"></span>
-<button id="search-btn" style="display:none">
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-  Search
-</button>
 
 <script>
-const EMOJI_CATEGORIES = {
-  'Smileys': ['😀','😃','😄','😁','😆','😅','😂','🤣','😊','😇','🙂','😉','😌','😍','🥰','😘','😋','😎','🤩','🥳','😏','😒','😔','😟','😢','😭','😤','😠','😡'],
-  'Gestures': ['👋','🤚','✋','👌','✌️','🤞','👍','👎','👏','🙌','🤝','🙏','💪'],
-  'Nature': ['🌸','🌺','🌻','🌹','🌿','🍀','🐶','🐱','🐻','🐼','🦊','🦁','🐸','🐝','🦋'],
-  'Food': ['🍎','🍊','🍋','🍇','🍓','🍔','🍟','🍕','🌮','🍜','🍣','🍩','🍪','🎂','🍺','☕'],
-  'Activities': ['⚽','🏀','🎾','🎮','🎯','🎲','🎨','🎵','🎶','🎸','🎹','🎤'],
-  'Objects': ['💡','💻','📱','📷','🔑','📚','✂️','🔧','💊','🚗','✈️','🚀'],
-  'Symbols': ['❤️','🧡','💛','💚','💙','💜','🖤','💔','💕','✅','❌','⭐','🔥','💯','🎉','🙈']
+// ── Constants ────────────────────────────────────────────────────
+const COLORS = ['#4f9ef8','#f87171','#34d399','#fbbf24','#a78bfa','#f472b6','#38bdf8','#fb923c'];
+const EMOJIS = {
+  'Smileys': ['😀','😃','😄','😁','😆','😅','😂','🤣','😊','😇','🙂','😉','😍','🥰','😘','😋','😎','🥳','😏','😔','😢','😭','😤','😠'],
+  'Gestures': ['👋','🤚','✋','👌','✌️','🤞','👍','👎','👏','🙌','🤝','🙏','💪','🤙','☝️'],
+  'Hearts': ['❤️','🧡','💛','💚','💙','💜','🖤','💔','💕','💞','💓','💗','💖','💘','💝'],
+  'Nature': ['🌸','🌺','🌻','🌹','🌿','🍀','🐶','🐱','🐻','🐼','🦊','🦁','🐸','🦋','🌈'],
+  'Food': ['🍎','🍊','🍋','🍇','🍓','🍔','🍟','🍕','🌮','🍜','🍣','🍩','🍪','🎂','☕','🧋'],
+  'Symbols': ['✅','❌','⭐','🔥','💯','🎉','🎊','🙈','💡','🚀','✈️','🎵','🎶','💻','📱'],
 };
-const ALL_EMOJIS = Object.values(EMOJI_CATEGORIES).flat();
+const ALL_EMOJIS = Object.values(EMOJIS).flat();
 
-// ─── State ────────────────────────────────────────────────────────────────────
+// ── State ─────────────────────────────────────────────────────────
 let ws = null;
 let myEmail = localStorage.getItem('chat_email') || null;
-let currentChat = null; // email of person we're chatting with
+let currentChat = null;
 let onlineUsers = [];
 let replyTo = null;
 let typingTimer = null;
 let isTyping = false;
+let searchActive = false;
 let searchQuery = '';
 let searchMatches = [];
 let searchIdx = 0;
+let lastDate = null;
 
-// ─── DOM refs ─────────────────────────────────────────────────────────────────
-const $ = id => document.getElementById(id);
-const emailOverlay = $('email-overlay');
-const emailInput = $('email-input');
-const emailBtn = $('email-btn');
-const convoList = $('convo-list');
-const onlineList = $('online-list');
-const userSearch = $('user-search');
-const searchGo = $('search-go');
-const searchResult = $('search-result');
-const header = $('header');
-const emptyState = $('empty-state');
-const messagesEl = $('messages');
-const typingIndicator = $('typing-indicator');
-const replyPreview = $('reply-preview');
-const replyPreviewText = $('reply-preview-text');
-const replyCancel = $('reply-cancel');
-const inputArea = $('input-area');
-const messageInput = $('message-input');
-const sendBtn = $('send-btn');
-const emojiBtn = $('emoji-btn');
-const emojiPicker = $('emoji-picker');
-const emojiSearchInput = $('emoji-search-input');
-const emojiPickerScroll = $('emoji-picker-scroll');
-const connStatus = $('conn-status');
-const msgSearchBar = $('msg-search-bar');
-const msgSearchInput = $('msg-search-input');
-const msgSearchClear = $('msg-search-clear');
-const msgSearchCount = $('msg-search-count');
-const searchBtn = $('search-btn');
+// ── Helpers ───────────────────────────────────────────────────────
+const $= id => document.getElementById(id);
+const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const fmtTime = ts => new Date(ts).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+function fmtDate(ts) {
+  const d = new Date(ts), now = new Date();
+  if (d.toDateString()===now.toDateString()) return 'Today';
+  const y = new Date(now); y.setDate(y.getDate()-1);
+  if (d.toDateString()===y.toDateString()) return 'Yesterday';
+  return d.toLocaleDateString([],{month:'short',day:'numeric'});
+}
+function colorFor(email) {
+  let h=0; for(const c of email) h=(h*31+c.charCodeAt(0))&0xffffffff;
+  return COLORS[Math.abs(h)%COLORS.length];
+}
+function initials(email) { return (email||'?')[0].toUpperCase(); }
 
-// ─── Email login ──────────────────────────────────────────────────────────────
-if (myEmail) emailOverlay.style.display = 'none';
-
-function submitEmail() {
-  const email = emailInput.value.trim().toLowerCase();
-  if (!email || !email.includes('@')) return;
-  myEmail = email;
-  localStorage.setItem('chat_email', email);
-  emailOverlay.style.display = 'none';
+// ── Login ─────────────────────────────────────────────────────────
+const overlay = $('email-overlay');
+if (myEmail) overlay.style.display='none';
+function doLogin() {
+  const v=($('email-in').value||'').trim().toLowerCase();
+  if(!v||!v.includes('@')) { $('email-in').style.borderColor='#f87171'; return; }
+  myEmail=v; localStorage.setItem('chat_email',v);
+  overlay.style.display='none';
+  $('my-email-chip').textContent=myEmail;
   connect();
 }
-emailBtn.onclick = submitEmail;
-emailInput.onkeydown = e => { if (e.key === 'Enter') submitEmail(); };
+$('email-go').onclick=doLogin;
+$('email-in').onkeydown=e=>{ if(e.key==='Enter') doLogin(); };
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-function escapeHtml(s) {
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-function formatTime(ts) { return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
-function formatDate(ts) {
-  const d = new Date(ts), now = new Date();
-  if (d.toDateString() === now.toDateString()) return 'Today';
-  const y = new Date(now); y.setDate(y.getDate() - 1);
-  if (d.toDateString() === y.toDateString()) return 'Yesterday';
-  return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
-}
-
-const USER_COLORS = ['#4f9ef8','#f87171','#34d399','#fbbf24','#a78bfa','#f472b6','#38bdf8','#fb923c'];
-function colorFor(email) {
-  let h = 0; for (const c of email) h = (h * 31 + c.charCodeAt(0)) & 0xffffffff;
-  return USER_COLORS[Math.abs(h) % USER_COLORS.length];
-}
-function initials(email) { return email[0].toUpperCase(); }
-
-// ─── WebSocket ────────────────────────────────────────────────────────────────
+// ── WebSocket ─────────────────────────────────────────────────────
 function connect() {
-  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  ws = new WebSocket(`${proto}//${location.host}`);
-  ws.onopen = () => {
-    setStatus('connected');
-    ws.send(JSON.stringify({ type: 'join', email: myEmail }));
-  };
-  ws.onclose = () => { setStatus('disconnected'); setTimeout(connect, 2500); };
-  ws.onerror = () => ws.close();
-  ws.onmessage = (e) => {
-    const data = JSON.parse(e.data);
-    switch (data.type) {
-      case 'conversations': renderConvos(data.conversations); break;
-      case 'online_users': renderOnline(data.users); break;
-      case 'history': if (data.with === currentChat) renderHistory(data.messages); break;
-      case 'message': handleIncoming(data.message); break;
-      case 'typing': handleTypingIndicator(data); break;
-      case 'search_result': renderSearchResult(data); break;
+  const proto=location.protocol==='https:'?'wss:':'ws:';
+  ws=new WebSocket(`${proto}//${location.host}`);
+  setStatus('connecting');
+  ws.onopen=()=>{ setStatus('connected'); ws.send(JSON.stringify({type:'join',email:myEmail})); };
+  ws.onclose=()=>{ setStatus('disconnected'); setTimeout(connect,2500); };
+  ws.onerror=()=>ws.close();
+  ws.onmessage=e=>{
+    const d=JSON.parse(e.data);
+    switch(d.type){
+      case 'conversations': renderConvos(d.conversations); break;
+      case 'online_users': renderOnline(d.users); break;
+      case 'history': if(d.with===currentChat) renderHistory(d.messages); break;
+      case 'message': onMessage(d.message); break;
+      case 'typing': onTyping(d); break;
+      case 'search_result': onSearchResult(d); break;
     }
   };
 }
-
-function setStatus(s) {
-  connStatus.className = `status-${s}`;
-  connStatus.textContent = s === 'connected' ? '● Online' : s === 'connecting' ? 'Connecting…' : '○ Offline';
+function setStatus(s){
+  const el=$('conn-status');
+  el.className='s-'+s;
+  el.textContent=s==='connected'?'● Online':s==='connecting'?'Connecting…':'○ Offline';
 }
+if(myEmail){ $('my-email-chip').textContent=myEmail; connect(); }
 
-// ─── Open conversation ────────────────────────────────────────────────────────
+// ── Open chat ─────────────────────────────────────────────────────
 function openChat(email) {
-  if (email === myEmail) return;
-  currentChat = email;
-  replyTo = null;
-  replyPreview.classList.remove('visible');
+  if(email===myEmail||!email) return;
+  currentChat=email; replyTo=null;
+  $('reply-preview').classList.remove('visible');
+  clearReply();
 
-  // Update active state in sidebar
-  document.querySelectorAll('.convo-item, .user-item').forEach(el => {
-    el.classList.toggle('active', el.dataset.email === email);
-  });
+  // Mobile: close sidebar
+  closeSidebar();
+
+  // Update sidebar active states
+  document.querySelectorAll('.list-item').forEach(el=>
+    el.classList.toggle('active', el.dataset.email===email));
 
   // Update header
-  const color = colorFor(email);
-  const online = onlineUsers.includes(email);
-  header.innerHTML = `
-    <div id="header-avatar" style="background:${color}">${initials(email)}</div>
-    <div style="flex:1;min-width:0">
-      <div id="header-email">${escapeHtml(email)}</div>
-      <div id="header-status" style="font-size:11px;color:${online ? '#22c55e' : 'var(--text2)'}">${online ? '● Online' : '○ Offline'}</div>
-    </div>
-    <button id="search-btn" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--text2);cursor:pointer;padding:5px 10px;font-size:13px;display:flex;align-items:center;gap:5px;">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-      Search
-    </button>
-    <span id="conn-status" class="status-connected">● Online</span>
-  `;
-  document.getElementById('search-btn').onclick = toggleSearch;
+  const color=colorFor(email), online=onlineUsers.includes(email);
+  const av=$('header-avatar');
+  av.style.cssText=`display:flex;background:${color};width:32px;height:32px;border-radius:50%;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;flex-shrink:0;`;
+  av.textContent=initials(email);
+  $('header-info').style.display='block';
+  $('header-email').textContent=email;
+  setHeaderOnline(online);
+  $('header-search-btn').style.display='';
+  $('back-btn').classList.remove('hidden');
+  $('menu-btn').classList.add('hidden');
 
-  // Show conversation UI
-  emptyState.style.display = 'none';
-  messagesEl.style.display = 'flex';
-  typingIndicator.style.display = 'block';
-  inputArea.style.display = 'block';
-  messagesEl.innerHTML = '';
+  // Show chat UI
+  $('empty-state').style.display='none';
+  $('messages').style.display='flex';
+  $('typing-bar').style.display='block';
+  $('input-wrap').style.display='block';
+  $('messages').innerHTML=''; lastDate=null;
 
-  // Load history
-  if (ws && ws.readyState === 1) {
-    ws.send(JSON.stringify({ type: 'get_history', with: email }));
-  }
+  if(ws&&ws.readyState===1) ws.send(JSON.stringify({type:'get_history',with:email}));
+  $('msg-input').focus();
+}
+function setHeaderOnline(online){
+  const el=$('header-status');
+  el.className=online?'online':'';
+  el.textContent=online?'● Online':'○ Offline';
 }
 
-// ─── Rendering ────────────────────────────────────────────────────────────────
-let lastRenderedDate = null;
+// ── Mobile sidebar ────────────────────────────────────────────────
+function openSidebar(){ $('sidebar').classList.add('open'); $('overlay').classList.add('show'); }
+function closeSidebar(){ $('sidebar').classList.remove('open'); $('overlay').classList.remove('show'); }
+$('menu-btn').onclick=openSidebar;
+$('overlay').onclick=closeSidebar;
+$('back-btn').onclick=()=>{
+  // On mobile go back to list; on desktop just show sidebar
+  if(window.innerWidth<=700){
+    // hide conversation, show empty state, show menu button
+    $('empty-state').style.display='flex';
+    $('messages').style.display='none';
+    $('typing-bar').style.display='none';
+    $('input-wrap').style.display='none';
+    $('reply-preview').classList.remove('visible');
+    $('header-info').style.display='none';
+    $('header-avatar').style.display='none';
+    $('header-search-btn').style.display='none';
+    $('back-btn').classList.add('hidden');
+    $('menu-btn').classList.remove('hidden');
+    currentChat=null;
+    document.querySelectorAll('.list-item').forEach(el=>el.classList.remove('active'));
+    openSidebar();
+  } else {
+    openSidebar();
+  }
+};
 
-function renderHistory(messages) {
-  messagesEl.innerHTML = '';
-  lastRenderedDate = null;
-  messages.forEach(appendMessage);
-  scrollToBottom();
-  if (searchQuery) applySearch();
+// ── Render messages ───────────────────────────────────────────────
+function renderHistory(msgs) {
+  $('messages').innerHTML=''; lastDate=null;
+  msgs.forEach(addMsg);
+  scrollBottom();
+  if(searchActive&&searchQuery) applySearch();
+}
+function addMsg(msg) {
+  const dateStr=fmtDate(msg.timestamp);
+  if(dateStr!==lastDate){
+    lastDate=dateStr;
+    const div=document.createElement('div');
+    div.className='date-divider'; div.textContent=dateStr;
+    $('messages').appendChild(div);
+  }
+  const isMe=msg.from===myEmail;
+  const el=document.createElement('div');
+  el.className='msg'; el.dataset.id=msg.id; el.tabIndex=-1;
+  let html='';
+  if(msg.replyTo){
+    html+=`<div class="reply-quote" data-ref="${esc(msg.replyTo.id)}"><strong>↩ ${esc(msg.replyTo.author||msg.replyTo.from)}</strong>${esc((msg.replyTo.text||'').slice(0,80))}${(msg.replyTo.text||'').length>80?'…':''}</div>`;
+  }
+  html+=`<div class="msg-header"><span class="msg-author" style="color:${colorFor(msg.from)}">${esc(isMe?'You':msg.from)}</span><span class="msg-time">${fmtTime(msg.timestamp)}</span></div>`;
+  html+=`<div class="msg-body"><div class="msg-text">${esc(msg.text)}</div><div class="msg-actions"><button class="msg-action reply-btn">↩ Reply</button></div></div>`;
+  el.innerHTML=html;
+  el.querySelector('.reply-btn').onclick=()=>startReply(msg);
+  const q=el.querySelector('.reply-quote');
+  if(q) q.onclick=()=>jumpTo(q.dataset.ref);
+  $('messages').appendChild(el);
+}
+function onMessage(msg) {
+  const other=msg.from===myEmail?msg.to:msg.from;
+  if(other===currentChat){ addMsg(msg); scrollIfNear(); if(searchActive&&searchQuery) applySearch(); }
+  refreshConvos();
+}
+function scrollBottom(){ const m=$('messages'); m.scrollTop=m.scrollHeight; }
+function scrollIfNear(){
+  const m=$('messages'); if(m.scrollHeight-m.scrollTop-m.clientHeight<140) scrollBottom();
+}
+function jumpTo(id){
+  const t=$('messages').querySelector(`[data-id="${id}"]`);
+  if(!t) return;
+  t.scrollIntoView({behavior:'smooth',block:'center'});
+  t.classList.add('highlighted'); setTimeout(()=>t.classList.remove('highlighted'),2000);
 }
 
-function appendMessage(msg) {
-  const dateStr = formatDate(msg.timestamp);
-  if (dateStr !== lastRenderedDate) {
-    const div = document.createElement('div');
-    div.className = 'date-divider';
-    div.textContent = dateStr;
-    messagesEl.appendChild(div);
-    lastRenderedDate = dateStr;
-  }
-
-  const isMe = msg.from === myEmail;
-  const el = document.createElement('div');
-  el.className = 'msg';
-  el.dataset.id = msg.id;
-
-  let html = '';
-  if (msg.replyTo) {
-    html += `<div class="msg-reply-quote" data-ref="${escapeHtml(msg.replyTo.id)}"><strong>↩ ${escapeHtml(msg.replyTo.author || msg.replyTo.from)}</strong>${escapeHtml((msg.replyTo.text || '').slice(0,80))}${(msg.replyTo.text||'').length>80?'…':''}</div>`;
-  }
-  html += `
-    <div class="msg-header">
-      <span class="msg-author" style="color:${colorFor(msg.from)}">${escapeHtml(isMe ? 'You' : msg.from)}</span>
-      <span class="msg-time">${formatTime(msg.timestamp)}</span>
-    </div>
-    <div class="msg-text">${escapeHtml(msg.text)}</div>
-    <div class="msg-actions"><button class="msg-action-btn reply-btn">↩ Reply</button></div>`;
-  el.innerHTML = html;
-  el.querySelector('.reply-btn').onclick = () => startReply(msg);
-  const q = el.querySelector('.msg-reply-quote');
-  if (q) q.onclick = () => jumpToMsg(q.dataset.ref);
-  messagesEl.appendChild(el);
-}
-
-function handleIncoming(msg) {
-  const other = msg.from === myEmail ? msg.to : msg.from;
-  if (other === currentChat) {
-    appendMessage(msg);
-    if (searchQuery) applySearch();
-    scrollToBottomIfNear();
-  }
-  // Refresh conversations list
-  if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'join', email: myEmail }));
-}
-
+// ── Render sidebar lists ──────────────────────────────────────────
 function renderConvos(convos) {
-  convoList.innerHTML = convos.length ? '' : '<div style="padding:8px 12px;font-size:12px;color:var(--text2)">No recent chats</div>';
-  convos.forEach(c => {
-    const isMe = c.lastMessage.from === myEmail;
-    const el = document.createElement('div');
-    el.className = 'convo-item';
-    el.dataset.email = c.with;
-    if (c.with === currentChat) el.classList.add('active');
-    const color = colorFor(c.with);
-    el.innerHTML = `
-      <div class="avatar" style="background:${color}">${initials(c.with)}</div>
-      <div class="convo-info">
-        <div class="convo-email">${escapeHtml(c.with)}</div>
-        <div class="convo-preview">${isMe ? 'You: ' : ''}${escapeHtml((c.lastMessage.text||'').slice(0,40))}</div>
-      </div>
-      <div class="convo-time">${formatTime(c.lastMessage.timestamp)}</div>`;
-    el.onclick = () => openChat(c.with);
-    convoList.appendChild(el);
+  const el=$('convo-list');
+  if(!convos.length){ el.innerHTML='<div class="empty-list">No recent chats</div>'; return; }
+  el.innerHTML='';
+  convos.forEach(c=>{
+    const isMe=c.lastMessage.from===myEmail;
+    const color=colorFor(c.with);
+    const div=document.createElement('div');
+    div.className='list-item'; div.dataset.email=c.with;
+    if(c.with===currentChat) div.classList.add('active');
+    div.innerHTML=`<div class="avatar" style="background:${color}">${initials(c.with)}</div><div class="item-info"><div class="item-email">${esc(c.with)}</div><div class="item-sub">${isMe?'You: ':''}${esc((c.lastMessage.text||'').slice(0,40))}</div></div><div class="item-time">${fmtTime(c.lastMessage.timestamp)}</div>`;
+    div.onclick=()=>openChat(c.with);
+    el.appendChild(div);
   });
 }
-
 function renderOnline(users) {
-  onlineUsers = users.filter(u => u !== myEmail);
-  onlineList.innerHTML = onlineUsers.length ? '' : '<div style="padding:8px 12px;font-size:12px;color:var(--text2)">No one else online</div>';
-  onlineUsers.forEach(email => {
-    const el = document.createElement('div');
-    el.className = 'user-item';
-    el.dataset.email = email;
-    if (email === currentChat) el.classList.add('active');
-    const color = colorFor(email);
-    el.innerHTML = `
-      <div class="avatar" style="background:${color}">${initials(email)}</div>
-      <div class="convo-info"><div class="convo-email">${escapeHtml(email)}</div></div>
-      <div class="online-dot"></div>`;
-    el.onclick = () => openChat(email);
-    onlineList.appendChild(el);
+  onlineUsers=users.filter(u=>u!==myEmail);
+  const el=$('online-list');
+  if(!onlineUsers.length){ el.innerHTML='<div class="empty-list">No one else online</div>'; return; }
+  el.innerHTML='';
+  onlineUsers.forEach(email=>{
+    const color=colorFor(email);
+    const div=document.createElement('div');
+    div.className='list-item'; div.dataset.email=email;
+    if(email===currentChat) div.classList.add('active');
+    div.innerHTML=`<div class="avatar" style="background:${color}">${initials(email)}</div><div class="item-info"><div class="item-email">${esc(email)}</div><div class="item-sub">Tap to chat</div></div><div class="online-dot"></div>`;
+    div.onclick=()=>openChat(email);
+    el.appendChild(div);
   });
-  // Update header status if in a chat
-  if (currentChat) {
-    const statusEl = document.getElementById('header-status');
-    if (statusEl) {
-      const online = onlineUsers.includes(currentChat);
-      statusEl.style.color = online ? '#22c55e' : 'var(--text2)';
-      statusEl.textContent = online ? '● Online' : '○ Offline';
-    }
-  }
+  // Update header if in a chat
+  if(currentChat) setHeaderOnline(onlineUsers.includes(currentChat));
+}
+function refreshConvos(){
+  if(ws&&ws.readyState===1) ws.send(JSON.stringify({type:'join',email:myEmail}));
 }
 
-function renderSearchResult(data) {
-  if (!data.email) { searchResult.innerHTML = ''; return; }
-  const label = data.online ? '🟢 Online' : data.known ? '⚪ Known user' : '❓ Unknown email';
-  searchResult.innerHTML = `${escapeHtml(data.email)} — ${label} &nbsp;<a onclick="openChat('${escapeHtml(data.email)}');userSearch.value='';searchResult.innerHTML='';">Start chat</a>`;
+// ── Search user ───────────────────────────────────────────────────
+$('search-go').onclick=doUserSearch;
+$('user-search').onkeydown=e=>{ if(e.key==='Enter') doUserSearch(); };
+function doUserSearch(){
+  const email=($('user-search').value||'').trim().toLowerCase();
+  if(!email||!email.includes('@')) return;
+  if(ws&&ws.readyState===1) ws.send(JSON.stringify({type:'search_user',email}));
+}
+function onSearchResult(d){
+  const label=d.online?'🟢 Online':d.known?'⚪ Known user':'❓ Unknown';
+  $('search-result').innerHTML=`${esc(d.email)} — ${label} &nbsp;<a onclick="openChat('${esc(d.email)}');$('user-search').value='';$('search-result').innerHTML=''">Start chat →</a>`;
 }
 
-// ─── Send ─────────────────────────────────────────────────────────────────────
-function sendMessage() {
-  const text = messageInput.value.trim();
-  if (!text || !ws || ws.readyState !== 1 || !currentChat) return;
-  ws.send(JSON.stringify({ type: 'message', to: currentChat, text, replyTo: replyTo ? { id: replyTo.id, from: replyTo.from, author: replyTo.from === myEmail ? 'You' : replyTo.from, text: replyTo.text } : null }));
-  messageInput.value = '';
-  messageInput.style.height = 'auto';
-  replyTo = null;
-  replyPreview.classList.remove('visible');
-  stopTyping();
+// ── Reply ─────────────────────────────────────────────────────────
+function startReply(msg){
+  replyTo=msg;
+  const label=msg.from===myEmail?'You':msg.from;
+  $('reply-text').innerHTML=`<strong>${esc(label)}</strong>: ${esc((msg.text||'').slice(0,80))}`;
+  $('reply-preview').classList.add('visible');
+  $('msg-input').focus();
 }
-sendBtn.onclick = sendMessage;
-messageInput.onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } };
-messageInput.oninput = () => {
-  messageInput.style.height = 'auto';
-  messageInput.style.height = Math.min(messageInput.scrollHeight, 120) + 'px';
+function clearReply(){ replyTo=null; $('reply-preview').classList.remove('visible'); }
+$('reply-cancel').onclick=clearReply;
+
+// ── Send ──────────────────────────────────────────────────────────
+function sendMsg(){
+  const text=($('msg-input').value||'').trim();
+  if(!text||!ws||ws.readyState!==1||!currentChat) return;
+  ws.send(JSON.stringify({type:'message',to:currentChat,text,
+    replyTo:replyTo?{id:replyTo.id,from:replyTo.from,author:replyTo.from===myEmail?'You':replyTo.from,text:replyTo.text}:null}));
+  $('msg-input').value=''; $('msg-input').style.height='auto';
+  clearReply(); stopTyping();
+}
+$('send-btn').onclick=sendMsg;
+$('msg-input').onkeydown=e=>{ if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMsg();} };
+$('msg-input').oninput=()=>{
+  const el=$('msg-input'); el.style.height='auto'; el.style.height=Math.min(el.scrollHeight,110)+'px';
   handleTyping();
 };
 
-// ─── Scroll ───────────────────────────────────────────────────────────────────
-function scrollToBottom() { messagesEl.scrollTop = messagesEl.scrollHeight; }
-function scrollToBottomIfNear() {
-  const { scrollTop, scrollHeight, clientHeight } = messagesEl;
-  if (scrollHeight - scrollTop - clientHeight < 120) scrollToBottom();
+// ── Typing ────────────────────────────────────────────────────────
+function handleTyping(){
+  if(!ws||ws.readyState!==1||!currentChat) return;
+  if(!isTyping){ isTyping=true; ws.send(JSON.stringify({type:'typing',to:currentChat,isTyping:true})); }
+  clearTimeout(typingTimer); typingTimer=setTimeout(stopTyping,2000);
 }
-
-// ─── Reply ────────────────────────────────────────────────────────────────────
-function startReply(msg) {
-  replyTo = msg;
-  const label = msg.from === myEmail ? 'You' : msg.from;
-  replyPreviewText.innerHTML = `<strong>${escapeHtml(label)}</strong> ${escapeHtml((msg.text||'').slice(0,80))}`;
-  replyPreview.classList.add('visible');
-  messageInput.focus();
-}
-replyCancel.onclick = () => { replyTo = null; replyPreview.classList.remove('visible'); };
-
-function jumpToMsg(id) {
-  const t = messagesEl.querySelector(`[data-id="${id}"]`);
-  if (!t) return;
-  t.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  t.classList.add('highlighted');
-  setTimeout(() => t.classList.remove('highlighted'), 2000);
-}
-
-// ─── Typing ───────────────────────────────────────────────────────────────────
-function handleTyping() {
-  if (!ws || ws.readyState !== 1 || !currentChat) return;
-  if (!isTyping) { isTyping = true; ws.send(JSON.stringify({ type: 'typing', to: currentChat, isTyping: true })); }
+function stopTyping(){
   clearTimeout(typingTimer);
-  typingTimer = setTimeout(stopTyping, 2000);
-}
-function stopTyping() {
-  if (isTyping && ws && ws.readyState === 1 && currentChat) {
-    isTyping = false; ws.send(JSON.stringify({ type: 'typing', to: currentChat, isTyping: false }));
+  if(isTyping&&ws&&ws.readyState===1&&currentChat){
+    isTyping=false; ws.send(JSON.stringify({type:'typing',to:currentChat,isTyping:false}));
   }
-  clearTimeout(typingTimer);
 }
-function handleTypingIndicator(data) {
-  if (data.from !== currentChat) return;
-  typingIndicator.textContent = data.isTyping ? `${escapeHtml(data.from)} is typing…` : '';
+function onTyping(d){
+  if(d.from!==currentChat) return;
+  $('typing-bar').textContent=d.isTyping?`${esc(d.from)} is typing…`:'';
 }
 
-// ─── User search ──────────────────────────────────────────────────────────────
-searchGo.onclick = () => {
-  const email = userSearch.value.trim().toLowerCase();
-  if (!email || !email.includes('@')) return;
-  if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'search_user', email }));
+// ── Message search ────────────────────────────────────────────────
+$('header-search-btn').onclick=()=>toggleMsgSearch(true);
+$('msg-search-close').onclick=()=>toggleMsgSearch(false);
+function toggleMsgSearch(open){
+  searchActive=open; $('msg-search-wrap').classList.toggle('visible',open);
+  if(open){ $('msg-search-input').focus(); } else { searchQuery=''; applySearch(); $('msg-search-input').value=''; }
+}
+$('msg-search-input').oninput=()=>{ searchQuery=$('msg-search-input').value.trim().toLowerCase(); applySearch(); };
+$('msg-search-input').onkeydown=e=>{
+  if(e.key==='Enter'&&searchMatches.length){ searchIdx=(searchIdx+1)%searchMatches.length; highlightMatch(); }
+  if(e.key==='Escape') toggleMsgSearch(false);
 };
-userSearch.onkeydown = e => { if (e.key === 'Enter') searchGo.click(); };
-
-// ─── Message search ───────────────────────────────────────────────────────────
-function toggleSearch() {
-  const visible = !msgSearchBar.classList.contains('visible');
-  msgSearchBar.classList.toggle('visible', visible);
-  msgSearchBar.style.display = visible ? 'flex' : 'none';
-  msgSearchCount.style.display = visible ? '' : 'none';
-  if (visible) { msgSearchInput.focus(); } else { clearMsgSearch(); }
-}
-msgSearchInput.oninput = () => { searchQuery = msgSearchInput.value.trim().toLowerCase(); applySearch(); };
-msgSearchInput.onkeydown = e => {
-  if (e.key === 'Enter' && searchMatches.length) { searchIdx = (searchIdx + 1) % searchMatches.length; scrollToMatch(); }
-  if (e.key === 'Escape') { toggleSearch(); }
-};
-msgSearchClear.onclick = () => { msgSearchInput.value = ''; searchQuery = ''; applySearch(); };
-
-function applySearch() {
-  const msgs = messagesEl.querySelectorAll('.msg');
-  searchMatches = []; searchIdx = 0;
-  if (!searchQuery) { msgs.forEach(m => m.classList.remove('search-dim','highlighted')); msgSearchCount.textContent = ''; return; }
-  msgs.forEach(m => {
-    const text = (m.querySelector('.msg-text')?.textContent||'') + ' ' + (m.querySelector('.msg-author')?.textContent||'');
-    if (text.toLowerCase().includes(searchQuery)) { m.classList.remove('search-dim'); searchMatches.push(m); }
-    else { m.classList.add('search-dim'); m.classList.remove('highlighted'); }
+function applySearch(){
+  const msgs=$('messages').querySelectorAll('.msg');
+  searchMatches=[]; searchIdx=0;
+  if(!searchQuery){ msgs.forEach(m=>m.classList.remove('dim','highlighted')); $('msg-search-count').textContent=''; return; }
+  msgs.forEach(m=>{
+    const txt=(m.querySelector('.msg-text')?.textContent||'').toLowerCase()+(m.querySelector('.msg-author')?.textContent||'').toLowerCase();
+    if(txt.includes(searchQuery)){ m.classList.remove('dim'); searchMatches.push(m); } else { m.classList.add('dim'); m.classList.remove('highlighted'); }
   });
-  msgSearchCount.textContent = searchMatches.length ? `${searchMatches.length} result${searchMatches.length!==1?'s':''}` : 'No results';
-  if (searchMatches.length) scrollToMatch();
+  $('msg-search-count').textContent=searchMatches.length?`${searchMatches.length} result${searchMatches.length!==1?'s':''}`:' No results';
+  if(searchMatches.length) highlightMatch();
 }
-function scrollToMatch() {
-  searchMatches.forEach((m,i) => m.classList.toggle('highlighted', i === searchIdx));
-  searchMatches[searchIdx]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-}
-function clearMsgSearch() {
-  searchQuery = ''; searchMatches = []; msgSearchInput.value = ''; msgSearchCount.textContent = '';
-  messagesEl.querySelectorAll('.msg').forEach(m => m.classList.remove('search-dim','highlighted'));
+function highlightMatch(){
+  searchMatches.forEach((m,i)=>m.classList.toggle('highlighted',i===searchIdx));
+  searchMatches[searchIdx]?.scrollIntoView({behavior:'smooth',block:'center'});
 }
 
-// ─── Emoji ────────────────────────────────────────────────────────────────────
-function buildEmojiPicker(filter = '') {
-  emojiPickerScroll.innerHTML = '';
-  if (filter) {
-    const grid = document.createElement('div'); grid.className = 'emoji-grid';
-    ALL_EMOJIS.slice(0,60).forEach(e => grid.appendChild(makeEmojiBtn(e)));
-    emojiPickerScroll.appendChild(grid); return;
+// ── Emoji picker ──────────────────────────────────────────────────
+function buildEmoji(filter=''){
+  const s=$('emoji-scroll'); s.innerHTML='';
+  if(filter){
+    const f=filter.toLowerCase();
+    const grid=document.createElement('div'); grid.className='e-grid';
+    ALL_EMOJIS.slice(0,80).forEach(e=>grid.appendChild(mkEBtn(e)));
+    s.appendChild(grid); return;
   }
-  for (const [cat, emojis] of Object.entries(EMOJI_CATEGORIES)) {
-    const label = document.createElement('div'); label.className = 'emoji-category-label'; label.textContent = cat;
-    const grid = document.createElement('div'); grid.className = 'emoji-grid';
-    emojis.forEach(e => grid.appendChild(makeEmojiBtn(e)));
-    emojiPickerScroll.appendChild(label); emojiPickerScroll.appendChild(grid);
+  for(const [cat,emojis] of Object.entries(EMOJIS)){
+    const lbl=document.createElement('div'); lbl.className='e-cat-label'; lbl.textContent=cat;
+    const grid=document.createElement('div'); grid.className='e-grid';
+    emojis.forEach(e=>grid.appendChild(mkEBtn(e)));
+    s.appendChild(lbl); s.appendChild(grid);
   }
 }
-function makeEmojiBtn(emoji) {
-  const btn = document.createElement('button'); btn.className = 'emoji-btn'; btn.textContent = emoji;
-  btn.onclick = () => { const s = messageInput.selectionStart, end = messageInput.selectionEnd, v = messageInput.value; messageInput.value = v.slice(0,s)+emoji+v.slice(end); messageInput.selectionStart = messageInput.selectionEnd = s+emoji.length; messageInput.focus(); };
+function mkEBtn(emoji){
+  const btn=document.createElement('button'); btn.className='e-btn'; btn.textContent=emoji;
+  btn.onclick=()=>{
+    const inp=$('msg-input'), ss=inp.selectionStart, se=inp.selectionEnd;
+    inp.value=inp.value.slice(0,ss)+emoji+inp.value.slice(se);
+    inp.selectionStart=inp.selectionEnd=ss+emoji.length; inp.focus();
+  };
   return btn;
 }
-emojiBtn.onclick = (e) => { e.stopPropagation(); const v = emojiPicker.classList.toggle('visible'); if (v) { buildEmojiPicker(); emojiSearchInput.value=''; emojiSearchInput.focus(); } };
-emojiSearchInput.oninput = () => buildEmojiPicker(emojiSearchInput.value.trim());
-document.addEventListener('click', e => { if (!emojiPicker.contains(e.target) && e.target !== emojiBtn) emojiPicker.classList.remove('visible'); });
-
-// ─── Init ─────────────────────────────────────────────────────────────────────
-if (myEmail) connect();
+$('emoji-toggle').onclick=e=>{
+  e.stopPropagation();
+  const picker=$('emoji-picker');
+  const open=picker.classList.toggle('open');
+  if(open){ buildEmoji(); $('emoji-search').value=''; $('emoji-search').focus(); }
+};
+$('emoji-search').oninput=()=>buildEmoji($('emoji-search').value.trim());
+document.addEventListener('click',e=>{
+  const picker=$('emoji-picker');
+  if(picker.classList.contains('open')&&!picker.contains(e.target)&&e.target!==$('emoji-toggle'))
+    picker.classList.remove('open');
+});
 </script>
 </body>
 </html>
