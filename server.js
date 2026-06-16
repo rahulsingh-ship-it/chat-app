@@ -44,6 +44,7 @@ async function connectDB() {
     db = client.db('chatapp');
     await db.collection('messages').createIndex({ from: 1, to: 1, timestamp: 1 });
     await db.collection('messages').createIndex({ to: 1, from: 1, timestamp: 1 });
+    await db.collection('messages').createIndex({ id: 1 });
     console.log('Connected to MongoDB');
   } catch (err) {
     console.error('MongoDB error:', err.message);
@@ -130,6 +131,8 @@ wss.on('connection', (ws) => {
   ws.on('message', async (raw) => {
     let msg;
     try { msg = JSON.parse(raw); } catch { return; }
+
+    try {
 
     switch (msg.type) {
 
@@ -224,6 +227,10 @@ wss.on('connection', (ws) => {
         ws.send(JSON.stringify({ type: 'search_result', email, online, known }));
         break;
       }
+    }
+    } catch (err) {
+      console.error(`[WS error] type=${msg?.type}:`, err.message);
+      try { ws.send(JSON.stringify({ type: 'error', code: msg?.type, message: 'Server error — please retry' })); } catch {}
     }
   });
 

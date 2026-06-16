@@ -315,7 +315,7 @@ const ALL_EMOJIS = Object.values(EMOJIS).flat();
 // ── State ─────────────────────────────────────────────────────────
 let ws = null;
 let myEmail = localStorage.getItem('chat_email') || null;
-let currentChat = null;
+let currentChat = sessionStorage.getItem('currentChat') || null;
 let onlineUsers = [];
 let replyTo = null;
 let typingTimer = null;
@@ -371,7 +371,11 @@ function connect() {
   ws.onmessage=e=>{
     const d=JSON.parse(e.data);
     switch(d.type){
-      case 'conversations': renderConvos(d.conversations); break;
+      case 'conversations':
+        renderConvos(d.conversations);
+        // Restore last open chat after page refresh
+        if(currentChat) openChat(currentChat);
+        break;
       case 'online_users': renderOnline(d.users); break;
       case 'history': if(d.with===currentChat) { if(d.isPagination) prependHistory(d.messages,d.hasMore); else renderHistory(d.messages,d.hasMore); } break;
       case 'message': onMessage(d.message); break;
@@ -393,6 +397,7 @@ function openChat(email) {
   if(!email||email===myEmail) return;
   const isNewChat = email !== currentChat;
   currentChat = email;
+  sessionStorage.setItem('currentChat', email);
   clearReply();
 
   closeSidebar();
