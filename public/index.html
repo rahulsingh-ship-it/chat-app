@@ -143,6 +143,18 @@
   /* Mobile: always show action buttons (touch users can't hover) */
   @media (max-width: 700px) { .msg-actions { display: flex; } .msg-action { opacity: 0.25; } }
 
+  /* ── Reactions ──────────────────────────────────────────────── */
+  .reactions { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+  .rxn { display: inline-flex; align-items: center; gap: 3px; background: var(--bg2); border: 1.5px solid var(--border); border-radius: 12px; cursor: pointer; font-size: 13px; padding: 2px 8px; line-height: 1.4; transition: border-color 0.1s; -webkit-tap-highlight-color: transparent; }
+  .rxn.mine { border-color: var(--accent); background: var(--reply-bg); }
+  .rxn:hover { border-color: var(--accent); }
+  .rxn-count { font-size: 12px; color: var(--text2); }
+  /* Quick-reaction popover */
+  #rxn-picker { display: none; position: fixed; background: var(--emoji-bg); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 4px 20px var(--shadow); padding: 6px 8px; z-index: 300; gap: 2px; }
+  #rxn-picker.open { display: flex; }
+  .rxn-pick-btn { background: none; border: none; cursor: pointer; font-size: 22px; padding: 4px 5px; border-radius: 7px; line-height: 1; -webkit-tap-highlight-color: transparent; }
+  .rxn-pick-btn:hover, .rxn-pick-btn:active { background: var(--bg3); }
+
   /* ── Typing ─────────────────────────────────────────────────── */
   #typing-bar { min-height: 18px; padding: 0 22px 2px; font-size: 12px; color: var(--text2); font-style: italic; }
 
@@ -281,6 +293,7 @@
     <!-- Message area -->
     <div id="messages" style="display:none"></div>
     <div id="typing-bar" style="display:none"></div>
+    <div id="rxn-picker"></div>
     <div id="reply-preview">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2.5" style="flex-shrink:0"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg>
       <div id="reply-text"></div>
@@ -399,6 +412,7 @@ function connect() {
       case 'history': if(d.with===currentChat) { if(d.isPagination) prependHistory(d.messages,d.hasMore); else renderHistory(d.messages,d.hasMore); } break;
       case 'message': onMessage(d.message); break;
       case 'message_edited': applyEdit(d.message); break;
+      case 'reaction_update': applyReactionUpdate(d); break;
       case 'typing': onTyping(d); break;
       case 'search_result': onSearchResult(d); break;
       case 'pong':
@@ -571,12 +585,14 @@ function buildMsgEl(msg){
   }
   html+=`<div class="msg-header"><span class="msg-author" style="color:${colorFor(msg.from)}">${esc(isMe?'You':msg.from)}</span><span class="msg-time">${fmtTime(msg.timestamp)}</span>${msg.editedAt?'<span class="msg-edited">(edited)</span>':''}</div>`;
   const editBtn=isMe?'<button class="msg-action edit-btn" title="Edit">✏️</button>':'';
-  html+=`<div class="msg-body"><div class="msg-text">${esc(msg.text)}</div><div class="msg-actions"><button class="msg-action reply-btn" title="Reply">↩</button>${editBtn}</div></div>`;
+  html+=`<div class="msg-body"><div class="msg-text">${esc(msg.text)}</div><div class="msg-actions"><button class="msg-action reply-btn" title="Reply">↩</button><button class="msg-action react-btn" title="React">😊</button>${editBtn}</div><div class="reactions"></div></div>`;
   el.innerHTML=html;
   el.querySelector('.reply-btn').onclick=()=>startReply(msg);
+  el.querySelector('.react-btn').onclick=(e)=>openRxnPicker(e, msg.id);
   if(isMe) el.querySelector('.edit-btn').onclick=()=>startEdit(el, msg);
   const q=el.querySelector('.reply-quote');
   if(q) q.onclick=()=>jumpTo(q.dataset.ref);
+  if(msg.reactions) renderReactions(el, msg.reactions);
   return el;
 }
 function startEdit(el, msg) {
@@ -712,6 +728,68 @@ function onSearchResult(d){
   const label=d.online?'🟢 Online':d.known?'⚪ Known user':'❓ Unknown';
   $('search-result').innerHTML=`${esc(d.email)} — ${label} &nbsp;<a onclick="openChat('${esc(d.email)}');$('user-search').value='';$('search-result').innerHTML=''">Start chat →</a>`;
 }
+
+// ── Reactions ─────────────────────────────────────────────────────
+const QUICK_RXNS = ['👍','❤️','😂','😮','😢','🔥'];
+
+function renderReactions(el, reactions) {
+  const container = el.querySelector('.reactions');
+  if(!container) return;
+  container.innerHTML = '';
+  Object.entries(reactions||{}).forEach(([emoji, users]) => {
+    if(!users||!users.length) return;
+    const mine = users.includes(myEmail);
+    const pill = document.createElement('button');
+    pill.className = 'rxn' + (mine ? ' mine' : '');
+    pill.title = users.join(', ');
+    pill.innerHTML = `${emoji}<span class="rxn-count">${users.length}</span>`;
+    pill.onclick = () => sendReaction(el.dataset.id, emoji);
+    container.appendChild(pill);
+  });
+}
+
+function applyReactionUpdate(d) {
+  const el = $('messages')?.querySelector(`[data-id="${d.messageId}"]`);
+  if(el) renderReactions(el, d.reactions);
+}
+
+function sendReaction(msgId, emoji) {
+  if(ws && ws.readyState === 1) ws.send(JSON.stringify({type:'react', messageId:msgId, emoji}));
+}
+
+let rxnTarget = null;
+function openRxnPicker(e, msgId) {
+  e.stopPropagation();
+  const picker = $('rxn-picker');
+  // Close if already open for same message
+  if(picker.classList.contains('open') && rxnTarget === msgId) {
+    closeRxnPicker(); return;
+  }
+  rxnTarget = msgId;
+  picker.innerHTML = '';
+  QUICK_RXNS.forEach(emoji => {
+    const btn = document.createElement('button');
+    btn.className = 'rxn-pick-btn'; btn.textContent = emoji;
+    btn.onclick = (ev) => { ev.stopPropagation(); sendReaction(msgId, emoji); closeRxnPicker(); };
+    picker.appendChild(btn);
+  });
+  // Position near button, keep on screen
+  const rect = e.target.getBoundingClientRect();
+  picker.classList.add('open');
+  const pw = picker.offsetWidth || 220;
+  let left = rect.left;
+  if(left + pw > window.innerWidth - 8) left = window.innerWidth - pw - 8;
+  picker.style.left = left + 'px';
+  picker.style.top = (rect.bottom + 4) + 'px';
+}
+function closeRxnPicker() {
+  $('rxn-picker').classList.remove('open');
+  rxnTarget = null;
+}
+document.addEventListener('click', e => {
+  if(!$('rxn-picker').classList.contains('open')) return;
+  if(!$('rxn-picker').contains(e.target)) closeRxnPicker();
+});
 
 // ── Reply ─────────────────────────────────────────────────────────
 function startReply(msg){

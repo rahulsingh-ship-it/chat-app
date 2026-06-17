@@ -230,6 +230,27 @@ wss.on('connection', (ws) => {
         break;
       }
 
+      case 'react': {
+        if (!myEmail) return;
+        const { messageId, emoji } = msg;
+        if (!messageId || !emoji) return;
+        if (!db) return;
+        const message = await db.collection('messages').findOne({ id: messageId }, { projection: { _id: 0 } });
+        if (!message) return;
+        if (message.from !== myEmail && message.to !== myEmail) return;
+        const reactions = message.reactions || {};
+        const users = reactions[emoji] || [];
+        const idx = users.indexOf(myEmail);
+        if (idx === -1) { users.push(myEmail); } else { users.splice(idx, 1); }
+        if (users.length === 0) { delete reactions[emoji]; } else { reactions[emoji] = users; }
+        await db.collection('messages').updateOne({ id: messageId }, { $set: { reactions } });
+        const other = message.from === myEmail ? message.to : message.from;
+        const update = { type: 'reaction_update', messageId, reactions };
+        ws.send(JSON.stringify(update));
+        sendTo(other, update);
+        break;
+      }
+
       case 'ping': {
         ws.send(JSON.stringify({ type: 'pong', db: db ? 'connected' : 'disconnected' }));
         break;
